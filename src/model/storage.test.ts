@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadDoc, saveDoc, STORAGE_KEY } from './storage';
+import { loadDoc, safeStorage, saveDoc, STORAGE_KEY } from './storage';
 import { sampleDoc } from './sample';
 
 const store = (v: string | null) => ({ getItem: (k: string) => (k === STORAGE_KEY ? v : null) });
@@ -15,6 +15,28 @@ describe('storage', () => {
       const d = loadDoc(store(raw));
       expect(Object.values(d.nodes).map((n) => n.text).sort()).toEqual(sampleTexts);
     }
+  });
+
+  it('returns sampleDoc for structurally broken docs', () => {
+    const base = (nodes: unknown, places: unknown = {}) => JSON.stringify({ version: 1, rootId: 'root', nodes, places });
+    const sampleTexts = Object.values(sampleDoc().nodes).map((n) => n.text).sort();
+    const broken = [
+      base({ root: { id: 'root', text: '', children: ['missing'] } }),
+      base({ root: { id: 'root', text: '', children: ['a'] }, a: { id: 'a', text: 'x' } }),
+      base({ root: { id: 'root', text: '', children: ['a'] }, a: { id: 'a', text: 'x', children: ['a'] } }),
+      base({ root: { id: 'root', text: '', children: ['a', 'a'] }, a: { id: 'a', text: 'x', children: [] } }),
+      base({ root: { id: 'root', text: '', children: ['a'] }, a: { id: 'a', text: 5, children: [] } }),
+      base({ root: { id: 'root', text: '', children: [] } }, null),
+    ];
+    for (const raw of broken) {
+      expect(Object.values(loadDoc(store(raw)).nodes).map((n) => n.text).sort()).toEqual(sampleTexts);
+    }
+  });
+
+  it('safeStorage returns null when storage access throws', () => {
+    expect(safeStorage(() => { throw new Error('SecurityError'); })).toBeNull();
+    const s = {} as Storage;
+    expect(safeStorage(() => s)).toBe(s);
   });
 
   it('round-trips a saved doc', () => {

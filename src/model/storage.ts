@@ -3,10 +3,29 @@ import { sampleDoc } from './sample';
 
 export const STORAGE_KEY = 'livenotes:doc:v1';
 
+/** Full structural check: a doc that parses but has a broken tree would crash every render. */
 function isDoc(v: unknown): v is Doc {
   if (!v || typeof v !== 'object') return false;
   const d = v as Doc;
-  return d.version === 1 && typeof d.rootId === 'string' && !!d.nodes?.[d.rootId] && typeof d.places === 'object';
+  if (d.version !== 1 || typeof d.rootId !== 'string') return false;
+  if (!d.places || typeof d.places !== 'object' || !d.nodes || typeof d.nodes !== 'object') return false;
+  const seen = new Set<string>();
+  const walk = (id: string): boolean => {
+    const n = d.nodes[id];
+    if (seen.has(id) || !n || n.id !== id || typeof n.text !== 'string' || !Array.isArray(n.children)) return false;
+    seen.add(id);
+    return n.children.every((c) => typeof c === 'string' && walk(c));
+  };
+  return walk(d.rootId);
+}
+
+/** localStorage throws when site data is blocked; run without persistence then. */
+export function safeStorage(get: () => Storage = () => window.localStorage): Storage | null {
+  try {
+    return get();
+  } catch {
+    return null;
+  }
 }
 
 /** Anything unreadable falls back to the sample rather than a blank screen. */

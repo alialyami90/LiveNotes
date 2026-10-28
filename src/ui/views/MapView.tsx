@@ -14,7 +14,7 @@ const markerIcon = (index: number, hovered: boolean) =>
   });
 
 export default function MapView({ id }: { id: NodeId }) {
-  const { doc, contexts, setFocus } = useStore();
+  const { viewDoc: doc, contexts, setFocus } = useStore();
   const hovered = useHovered();
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);

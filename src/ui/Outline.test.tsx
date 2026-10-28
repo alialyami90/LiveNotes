@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode } from '../model/types';
 import type { Services } from '../services/types';
-import { DocProvider } from './store';
+import { DocProvider, useStore } from './store';
+import { STORAGE_KEY } from '../model/storage';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Outline } from './Outline';
 
 function build(items: [string, string][]): Doc {
@@ -99,5 +101,103 @@ describe('Outline', () => {
     expect(container.querySelector('[data-view="calendar"]')).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'Calendar view' }));
     expect(container.querySelector('[data-view="calendar"]')).toBeNull();
+  });
+});
+
+describe('store robustness', () => {
+  it('does not geocode half-typed mentions through formulas in other rows', async () => {
+    const calls: string[] = [];
+    const recording: Services = { ...services, geocode: async (n) => { calls.push(n); return services.geocode(n); } };
+    const doc = build([['p', 'Trip']]);
+    doc.nodes.p.children = ['c'];
+    doc.nodes.root.children = ['p'];
+    doc.nodes.c = { id: 'c', text: 'lunch {here.name}', children: [] };
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={doc} services={recording} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    await user.click(screen.getByText('Trip'));
+    await user.keyboard('{End} @Lisbon');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual([]);
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.getByText('Lisboa')).toBeInTheDocument());
+    expect(calls).toEqual(['lisbon']);
+  });
+
+  it('re-resolves places after the document is replaced', async () => {
+    let replace: (d: Doc) => void = () => {};
+    function Grab() {
+      replace = useStore().replaceDoc;
+      return null;
+    }
+    render(
+      <DocProvider initialDoc={build([['a', 'Visit @Lisbon']])} services={services} storage={null} today="2026-10-28">
+        <Grab />
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveAttribute('title', 'Lisboa'));
+    act(() => replace(build([['b', 'Back to @Lisbon']])));
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveAttribute('title', 'Lisboa'));
+  });
+
+  it('picks up edits saved by another tab', async () => {
+    window.localStorage.clear();
+    render(
+      <DocProvider initialDoc={build([['a', 'mine']])} services={services} storage={window.localStorage} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    const theirs = JSON.stringify(build([['a', 'from the other tab']]));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY, newValue: theirs }));
+    });
+    expect(await screen.findByText('from the other tab')).toBeInTheDocument();
+  });
+
+  it('flushes a pending save when the page is hidden', async () => {
+    window.localStorage.clear();
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={build([['a', 'x']])} services={services} storage={window.localStorage} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    await user.click(screen.getByText('x'));
+    await user.keyboard('{End}yz');
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toContain('xyz');
+  });
+});
+
+describe('slash commands', () => {
+  it('only treat /table as a command when it is a separate word', async () => {
+    const { user, container } = setup(build([['a', 'dinner/table']]));
+    await user.click(screen.getByText('dinner/table'));
+    await user.keyboard('{End}{Enter}');
+    expect(container.querySelector('[data-view]')).toBeNull();
+    expect(screen.getByText('dinner/table')).toBeInTheDocument();
+  });
+});
+
+describe('ErrorBoundary', () => {
+  it('shows a recovery screen instead of a blank page', () => {
+    const Boom = () => {
+      throw new Error('kaboom');
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(
+      <ErrorBoundary>
+        <Boom />
+      </ErrorBoundary>,
+    );
+    spy.mockRestore();
+    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reset to sample/i })).toBeInTheDocument();
   });
 });

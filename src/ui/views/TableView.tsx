@@ -22,7 +22,7 @@ function header(sources: (string | undefined)[], index: number): string {
 }
 
 export function TableView({ id }: { id: NodeId }) {
-  const { doc, contexts } = useStore();
+  const { viewDoc: doc, contexts } = useStore();
   const hovered = useHovered();
   const rows = doc.nodes[id].children;
   if (rows.length === 0) return <div className="view-empty">Add bullets under this one to fill the table.</div>;

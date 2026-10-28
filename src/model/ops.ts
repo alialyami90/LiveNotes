@@ -34,11 +34,20 @@ export function insertAfter(doc: Doc, id: NodeId, text = ''): OpResult {
 }
 
 /**
- * Enter: text after the caret moves to a new node. An expanded parent split at
- * its end gets a new first child instead, matching outliner convention.
+ * Enter: text after the caret moves to a new node. At the very start, an empty
+ * node goes above instead, so the node keeps its children and context. An
+ * expanded parent split at its end gets a new first child.
  */
 export function splitNode(doc: Doc, id: NodeId, caret: number): OpResult {
   const node = doc.nodes[id];
+  if (caret === 0 && node.text !== '') {
+    const parentId = parentOf(doc, id);
+    if (!parentId) return { doc };
+    const parent = doc.nodes[parentId];
+    const blank: OutlineNode = { id: newId(), text: '', children: [] };
+    const updated = insertChild(parent, blank.id, parent.children.indexOf(id));
+    return { doc: withNodes(doc, [updated, blank]), focus: { id, caret: 0 } };
+  }
   const before = node.text.slice(0, caret);
   const after = node.text.slice(caret);
   if (after === '' && node.children.length > 0 && !node.collapsed) {

@@ -34,7 +34,7 @@ function title(first: ISODate, last: ISODate): string {
 
 /** Only the weeks the plan spans, so a four-day trip isn't lost in a month grid. */
 export function CalendarView({ id }: { id: NodeId }) {
-  const { doc, contexts, setFocus } = useStore();
+  const { viewDoc: doc, contexts, setFocus } = useStore();
   const hovered = useHovered();
   const byDate = collectDates(doc, contexts, id);
   const dates = [...byDate.keys()];

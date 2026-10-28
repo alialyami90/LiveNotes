@@ -92,14 +92,16 @@ thin.
 ```
 src/
   model/      types.ts  tree.ts (parent index, traversal)  ops.ts (pure edits)
-              reducer.ts  storage.ts  sample.ts (seed trip doc)
-  syntax/     tokenize.ts (text → segments)  dates.ts (date recognition)
+              storage.ts (validate, load/save)  sample.ts (seed trip doc)
+  syntax/     tokenize.ts (text → segments, escapes)  dates.ts (date recognition)
   context/    resolve.ts (effective place/date per node)
   formula/    lexer.ts  parser.ts  evaluate.ts  values.ts  format.ts
-  services/   types.ts  geocode.ts  weather.ts  routing.ts  geo.ts  memo.ts
-  ui/         App.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx  RichText.tsx
-              Chips.tsx  NodeMenu.tsx  hover.ts  useFormula.ts  usePlaces.ts
-              views/MapView.tsx  views/CalendarView.tsx  views/TableView.tsx
+  services/   types.ts  http.ts (Photon · Open-Meteo · OSRM)  geo.ts  memo.ts
+  ui/         store.tsx (DocProvider: state, focus, place lookups, persistence)
+              App.tsx  ErrorBoundary.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx
+              RichText.tsx  Chips.tsx  NodeMenu.tsx  hover.ts  useFormula.ts
+              views/ViewHost.tsx  views/collect.ts  views/MapView.tsx (lazy)
+              views/CalendarView.tsx  views/TableView.tsx
   main.tsx  styles.css
 ```
 
@@ -147,7 +149,7 @@ interface Doc {
 |---|---|---|
 | `text` | anything else | |
 | `place` | `@Word` or `@[Multi Word Name]` | `@Word` stops at whitespace or punctuation. The key is lowercased and trimmed. |
-| `date` | `2026-11-03`, `Nov 3`, `3 Nov`, `November 3, 2026`, `Nov 3 2026` | Without a year, the year comes from the nearest ancestor date, else the current year (resolved in `context/`). |
+| `date` | `2026-11-03`, `Nov 3`, `3 Nov`, `November 3, 2026`, `Nov 3 2026` | Without a year, the year is inferred in `context/` (§3.3). |
 | `formula` | `{ … }` | Braces nest-count. An unclosed `{` is plain text. |
 | escape | `\@`, `\{` | Stays literal text (backslash hidden when rendered by `displayText`). |
 
@@ -160,7 +162,12 @@ Each node has an **effective context** `{ place?, date? }`:
 
 - `place` is the **last** place mentioned in the node's own text. If the node has
   none, it inherits the parent's effective place.
-- `date` follows the same rule. This also supplies the year for yearless dates.
+- `date` follows the same rule.
+- **Yearless dates look forward.** The reference date is the previous date in
+  the same node, else the inherited date, else today. A yearless date takes the
+  reference's year, unless that would put it more than ~6 months before the
+  reference, in which case it takes the next year. So `Jan 2` under
+  `Dec 30 2026` resolves to `2027-01-02`.
 
 This makes the following work:
 
@@ -261,8 +268,13 @@ Rules:
 - Failures surface as `error` values or chips. **Never substitute fake data** in
   the shipped app. Fakes exist only in tests.
 - Geocoding results are written into `doc.places` (one network hit per name,
-  ever). Mentions in the row being edited are geocoded only after it loses
-  focus, so half-typed names (`@Lis`) are never looked up.
+  ever). The store deduplicates in-flight lookups per key.
+- **The focused row is frozen for everyone else.** While a row is being edited,
+  the store's `viewDoc` holds that row's text as it was when editing began.
+  Contexts, formulas in other rows, views and geocoding all read `viewDoc`, so
+  a half-typed name (`@Lis`) is never looked up. It is resolved on blur.
+- Replacing the document (Import, Reset, another tab) clears the session's
+  lookup bookkeeping, so its places resolve again.
 - Formulas get places through an async `resolvePlace(key)`, so a formula is
   simply *pending* while its place is being geocoded.
 - `memo.ts` deduplicates in-flight and completed calls for the session.
@@ -274,7 +286,8 @@ Rules:
 A view is attached to a node (`node.view`) and renders that node's **subtree**
 directly beneath it. The user toggles it with the row's hover buttons
 (🗺️ 📅 ▦), or by ending the node's text with `/map`, `/calendar`, `/table`
-or `/none` and pressing Enter. The command is stripped from the text.
+or `/none` and pressing Enter. The command must be its own word
+(`dinner/table` is just text) and is stripped from the text.
 
 | View | Shows |
 |---|---|
@@ -296,7 +309,9 @@ a marker or entry highlights the row.
   red if not found), dates become chips, and formulas become result chips. The
   raw formula appears on hover.
 - **Keys:**
-  - `Enter` splits the node at the caret, or creates a new sibling.
+  - `Enter` splits the node at the caret, or creates a new sibling. At the
+    very start of a non-empty node it inserts an empty bullet *above*, so the
+    node keeps its children and context.
   - `Tab` and `Shift+Tab` indent and outdent.
   - `Backspace` on an empty node deletes it. At the start of a non-empty node,
     it merges into the previous visible node.
@@ -306,7 +321,16 @@ a marker or entry highlights the row.
 - **Bullets:** clicking the bullet collapses or expands. A small triangle shows
   that hidden children exist.
 - **Persistence:** saves are debounced (300 ms) to `localStorage["livenotes:doc:v1"]`.
-  The header has Export/Import JSON buttons and a "Reset to sample" button.
+  - Pending saves are flushed on `pagehide` and when the tab becomes hidden.
+  - A `storage` event from another tab replaces the document, keeping focus
+    when that row still exists.
+  - Loaded and imported JSON is validated as a full tree: every child exists,
+    there are no cycles or shared children, and `places` is an object. Anything
+    else falls back to the sample.
+  - If site data is blocked, the app runs without persistence.
+  - The header has Export/Import JSON buttons and a "Reset to sample" button.
+  - A top-level `ErrorBoundary` offers "Download saved data" and "Reset to
+    sample" instead of a blank page.
 - **First launch:** seeds a sample Portugal trip from `model/sample.ts` that
   exercises every feature.
 

@@ -16,22 +16,38 @@ export interface NodeContext {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
+const ROLLOVER_DAYS = 183;
+
+const dayNumber = (iso: ISODate) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Date.UTC(y, m - 1, d) / 86400000;
+};
+
+/**
+ * Plans look forward: a yearless date that would land more than ~6 months
+ * before its reference date (parent's date, else today) means next year,
+ * so "Jan 2" under "Dec 30 2026" is 2027-01-02.
+ */
+function yearFor(month: number, day: number, reference: ISODate): number {
+  const year = Number(reference.slice(0, 4));
+  const candidate = isoDate(year, month, day);
+  return dayNumber(candidate) < dayNumber(reference) - ROLLOVER_DAYS ? year + 1 : year;
+}
 export const isoDate = (y: number, m: number, d: number): ISODate => `${y}-${pad(m)}-${pad(d)}`;
 
 /** One top-down pass so inherited context (and the year for yearless dates) flows from ancestors. */
 export function resolveContexts(doc: Doc, today: ISODate): Map<NodeId, NodeContext> {
   const out = new Map<NodeId, NodeContext>();
-  const todayYear = Number(today.slice(0, 4));
 
   const visit = (id: NodeId, inherited: NodeContext, prevPlaceKey: string | undefined) => {
     const ownPlaces: string[] = [];
     const ownDates: ISODate[] = [];
-    let year = inherited.date ? Number(inherited.date.slice(0, 4)) : todayYear;
+    let reference = inherited.date ?? today;
     for (const seg of tokenize(doc.nodes[id].text)) {
       if (seg.kind === 'place') ownPlaces.push(seg.key);
       else if (seg.kind === 'date') {
-        if (seg.year) year = seg.year;
-        ownDates.push(isoDate(seg.year ?? year, seg.month, seg.day));
+        reference = isoDate(seg.year ?? yearFor(seg.month, seg.day, reference), seg.month, seg.day);
+        ownDates.push(reference);
       }
     }
     const ctx: NodeContext = {

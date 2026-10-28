@@ -42,8 +42,18 @@ describe('resolveContexts', () => {
     expect(ctx.get('lunch')!.date).toBe('2026-11-03');
   });
 
-  it('a yearless date takes the year of the nearest dated ancestor', () => {
-    expect(ctx.get('jan')!.date).toBe('2026-01-02');
+  it('a yearless date that would fall long before its parent rolls into the next year', () => {
+    expect(ctx.get('jan')!.date).toBe('2027-01-02');
+  });
+
+  it('a yearless date near its dated parent keeps the parent year', () => {
+    const d = build([['p', 'Mar 10 2027 trip', [['c', 'Mar 8 pack']]]]);
+    expect(resolveContexts(d, TODAY).get('c')!.date).toBe('2027-03-08');
+  });
+
+  it('with no dated ancestor, a yearless date far behind today means next year', () => {
+    const d = build([['j', 'Jan 5 ski trip']]);
+    expect(resolveContexts(d, '2026-12-20').get('j')!.date).toBe('2027-01-05');
   });
 
   it('a yearless date with no dated ancestor takes today\'s year', () => {

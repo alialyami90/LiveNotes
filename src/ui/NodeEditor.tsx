@@ -4,7 +4,7 @@ import { indent, moveDown, moveUp, outdent, removeOrMerge, setText, setView, spl
 import { visibleOrder } from '../model/tree';
 import { useStore } from './store';
 
-const VIEW_COMMAND = /\s*\/(map|calendar|table|none)$/;
+const VIEW_COMMAND = /(?:^|\s+)\/(map|calendar|table|none)$/;
 
 export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   const { doc, apply, setFocus } = useStore();

@@ -54,6 +54,17 @@ describe('ops', () => {
     expect(r.focus).toEqual({ id: top[1], caret: 0 });
   });
 
+  it('splitNode at caret 0 of a non-empty node inserts an empty sibling above and keeps the node intact', () => {
+    const d = build([['p', [['c1'], ['c2']]]]);
+    const r = splitNode(d, 'p', 0);
+    const top = r.doc.nodes.root.children;
+    expect(top).toHaveLength(2);
+    expect(r.doc.nodes[top[0]].text).toBe('');
+    expect(top[1]).toBe('p');
+    expect(kids(r.doc, 'p')).toEqual(['c1', 'c2']);
+    expect(r.focus).toEqual({ id: 'p', caret: 0 });
+  });
+
   it('splitNode at end of an expanded parent inserts as first child', () => {
     const d = build([['p', [['c']]]]);
     const r = splitNode(d, 'p', 1);
