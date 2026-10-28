@@ -387,3 +387,40 @@ npm run build
    - Date ranges ("Nov 3–5") as calendar spans.
    - Sync via Automerge for true local-first collaboration.
    - Live transit or walking routes.
+
+---
+
+## 11. Android app (Capacitor)
+
+The same web app ships as an Android APK. It is wrapped with **Capacitor 8**,
+which hosts the Vite build in a WebView. No logic forks for Android: platform
+differences live in `src/platform/` and in CSS.
+
+| Piece | Decision |
+|---|---|
+| Wrapper | `capacitor.config.ts`: appId `com.livenotes.app`, appName `LiveNotes`, `webDir: 'dist'`. The generated `android/` project is committed. Its built web assets are git-ignored. |
+| Build | The sandbox can't reach Google's Android SDK hosts, so APKs are built by **GitHub Actions** (`.github/workflows/android.yml`). |
+| Output | A **debug APK** for sideloading. |
+| Data & network | `localStorage` persists in the WebView. The data APIs are HTTPS with permissive CORS, so they work from Capacitor's `https://localhost` origin unchanged. |
+| Phone toolbar | Soft keyboards have no Tab, and Backspace is unreliable. When a row is focused on a touch device (`pointer: coarse`), a toolbar sits at the bottom of the screen with outdent, indent, move up, move down, collapse and delete bullet. Its buttons `preventDefault` on pointer/mouse down so the editor keeps focus and the keyboard stays up. |
+| Export | Blob downloads don't work in a WebView. On native, `src/platform/export.ts` writes `livenotes.json` to the cache directory (`@capacitor/filesystem`) and opens the Android share sheet (`@capacitor/share`). On the web it downloads as before. Import uses `<input type=file>`, which Capacitor supports natively. |
+| Touch UI | Row view buttons are always visible under `(hover: none)`. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
+
+**CI workflow:** on every push and on manual dispatch it runs:
+
+1. `npm ci`
+2. typecheck, tests and build
+3. `npx cap sync android`
+4. JDK 21
+5. `./gradlew assembleDebug`
+
+It uploads `app-debug.apk` as a workflow artifact and also attaches it to a
+rolling GitHub pre-release, `android-latest`, so it can be downloaded directly
+on a phone.
+
+**Known limit:** OpenStreetMap's tile servers may reject requests from apps
+without a proper Referer. If tiles don't load in the APK, switch to a tile
+provider that permits app use.
+
+Local build, given an Android SDK: `npm run android:build`
+(build, sync, then `./gradlew assembleDebug`).
