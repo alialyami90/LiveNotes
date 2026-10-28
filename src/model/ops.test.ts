@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc, OutlineNode } from './types';
 import {
-  indent, insertAfter, moveDown, moveUp, outdent, removeOrMerge, setPlace, setText, setView, splitNode, toggleCollapse,
+  deleteNode, indent, insertAfter, moveDown, moveUp, outdent, removeOrMerge, setPlace, setText, setView, splitNode, toggleCollapse,
 } from './ops';
 import { ancestors, parentOf, subtree, visibleOrder } from './tree';
 
@@ -128,6 +128,29 @@ describe('ops', () => {
     expect(removeOrMerge(d, 'a').doc).toBe(d);
   });
 
+  it('deleteNode removes the node and its subtree and focuses the previous visible row at its end', () => {
+    const d = build([['ab'], ['c', [['c1', [['c1x']]]]], ['d']]);
+    const r = deleteNode(d, 'c');
+    expect(kids(r.doc, 'root')).toEqual(['ab', 'd']);
+    expect(r.doc.nodes.c).toBeUndefined();
+    expect(r.doc.nodes.c1).toBeUndefined();
+    expect(r.doc.nodes.c1x).toBeUndefined();
+    expect(r.focus).toEqual({ id: 'ab', caret: 2 });
+  });
+
+  it('deleteNode on the first row focuses the next row', () => {
+    const r = deleteNode(build([['a'], ['b']]), 'a');
+    expect(r.focus).toEqual({ id: 'b', caret: 0 });
+  });
+
+  it('deleteNode on the only row leaves one empty row so the outline stays editable', () => {
+    const r = deleteNode(build([['a']]), 'a');
+    const top = r.doc.nodes.root.children;
+    expect(top).toHaveLength(1);
+    expect(r.doc.nodes[top[0]].text).toBe('');
+    expect(r.focus).toEqual({ id: top[0], caret: 0 });
+  });
+
   it('moveUp / moveDown swap with siblings', () => {
     const d = build([['a'], ['b'], ['c']]);
     expect(kids(moveUp(d, 'b').doc, 'root')).toEqual(['b', 'a', 'c']);
@@ -160,6 +183,7 @@ describe('ops', () => {
       toggleCollapse(d, 'a');
       setView(d, 'a', 'table');
       setPlace(d, 'k', { name: 'k', lat: 0, lon: 0 });
+      deleteNode(d, 'bc');
     }).not.toThrow();
   });
 });

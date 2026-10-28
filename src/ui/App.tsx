@@ -3,6 +3,7 @@ import { parseImport } from '../model/storage';
 import { sampleDoc } from '../model/sample';
 import { useStore } from './store';
 import { Outline } from './Outline';
+import { MobileToolbar } from './MobileToolbar';
 
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
@@ -61,6 +62,7 @@ export function App() {
           <span><code>/map</code> <code>/calendar</code> <code>/table</code> + Enter adds a view</span>
         </footer>
       </main>
+      <MobileToolbar />
     </div>
   );
 }

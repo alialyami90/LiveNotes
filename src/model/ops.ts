@@ -1,5 +1,5 @@
 import type { Doc, NodeId, OpResult, OutlineNode, Place, ViewKind } from './types';
-import { parentOf, visibleOrder } from './tree';
+import { parentOf, subtree, visibleOrder } from './tree';
 
 const newId = (): NodeId => crypto.randomUUID();
 
@@ -100,6 +100,25 @@ export function removeOrMerge(doc: Doc, id: NodeId): OpResult {
   };
   const changed = prev.id === parentId ? [merged] : [parent, merged];
   return { doc: withNodes(doc, changed, [id]), focus: { id: prev.id, caret: prev.text.length } };
+}
+
+/** Removes a node with its subtree. The outline never ends up with no rows to type in. */
+export function deleteNode(doc: Doc, id: NodeId): OpResult {
+  const parentId = parentOf(doc, id);
+  if (!parentId) return { doc };
+  const order = visibleOrder(doc);
+  const removed = [id, ...subtree(doc, id)];
+  const after = order.slice(order.indexOf(id) + 1).find((n) => !removed.includes(n));
+  const before = order.slice(0, order.indexOf(id)).at(-1);
+  const parent = removeChild(doc.nodes[parentId], id);
+  const next = withNodes(doc, [parent], removed);
+  if (before) return { doc: next, focus: { id: before, caret: doc.nodes[before].text.length } };
+  if (after) return { doc: next, focus: { id: after, caret: 0 } };
+  const blank: OutlineNode = { id: newId(), text: '', children: [] };
+  return {
+    doc: withNodes(next, [{ ...next.nodes[parentId], children: [blank.id] }, blank]),
+    focus: { id: blank.id, caret: 0 },
+  };
 }
 
 function swap(doc: Doc, id: NodeId, delta: -1 | 1): OpResult {
