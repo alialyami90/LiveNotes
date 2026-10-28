@@ -24,6 +24,12 @@ describe('storage', () => {
     expect(loadDoc(store(saved))).toEqual(d);
   });
 
+  it('sampleDoc only spells out the year when the trip crosses into another year', () => {
+    const texts = (d: Date) => Object.values(sampleDoc(d).nodes).map((n) => n.text).join('\n');
+    expect(texts(new Date(2026, 9, 28))).not.toMatch(/\b2026\b/);
+    expect(texts(new Date(2026, 11, 29))).toMatch(/Jan 2 2027/);
+  });
+
   it('sampleDoc has a valid tree with nodes reachable from root', () => {
     const d = sampleDoc();
     expect(d.nodes[d.rootId].children.length).toBeGreaterThan(0);

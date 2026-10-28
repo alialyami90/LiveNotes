@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeKey, tokenize, type Segment } from './tokenize';
+import { displayText, placeKey, tokenize, type Segment } from './tokenize';
 
 const raw = (s: Segment) => (s.kind === 'text' ? s.text : s.raw);
 
@@ -59,8 +59,19 @@ describe('tokenize', () => {
     expect(tokenize(text).map(raw).join('')).toBe(text);
   });
 
+  it('a backslash escapes @ and { so they stay literal', () => {
+    const segs = tokenize('type \\@Place or \\{braces}');
+    expect(segs).toEqual([{ kind: 'text', text: 'type \\@Place or \\{braces}' }]);
+  });
+
   it('merges adjacent text runs', () => {
     expect(tokenize('a @ b')).toEqual([{ kind: 'text', text: 'a @ b' }]);
+  });
+});
+
+describe('displayText', () => {
+  it('drops the escaping backslash for display', () => {
+    expect(displayText('type \\@Place or \\{x}')).toBe('type @Place or {x}');
   });
 });
 

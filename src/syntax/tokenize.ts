@@ -37,6 +37,11 @@ export function placeAt(text: string, i: number): { name: string; end: number } 
   return m ? { name: m[0], end: i + 1 + m[0].length } : null;
 }
 
+/** Text segments keep escapes so raw text round-trips; this is what readers see. */
+export function displayText(text: string): string {
+  return text.replace(/\\([@{])/g, '$1');
+}
+
 /** Splits node text into segments; concatenating every `raw`/`text` reproduces the input. */
 export function tokenize(text: string): Segment[] {
   const out: Segment[] = [];
@@ -49,6 +54,11 @@ export function tokenize(text: string): Segment[] {
   let i = 0;
   while (i < text.length) {
     const ch = text[i];
+    if (ch === '\\' && (text[i + 1] === '@' || text[i + 1] === '{')) {
+      buf += ch + text[i + 1];
+      i += 2;
+      continue;
+    }
     if (ch === '{') {
       const end = matchBrace(text, i);
       if (end !== -1) {

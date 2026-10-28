@@ -1,0 +1,51 @@
+import type { Doc, NodeId, Place } from '../../model/types';
+import { subtree } from '../../model/tree';
+import type { ISODate, NodeContext } from '../../context/resolve';
+import { displayText, tokenize } from '../../syntax/tokenize';
+
+export interface MapStop {
+  nodeId: NodeId;
+  key: string;
+  place: Place;
+  /** 1-based visit order, shown on the marker. */
+  index: number;
+}
+
+/** The view's own node first, then its subtree in document order. */
+const scope = (doc: Doc, id: NodeId) => [id, ...subtree(doc, id)];
+
+export function collectPlaces(doc: Doc, contexts: Map<NodeId, NodeContext>, id: NodeId): MapStop[] {
+  const stops: MapStop[] = [];
+  for (const nodeId of scope(doc, id)) {
+    for (const key of new Set(contexts.get(nodeId)?.ownPlaces ?? [])) {
+      const place = doc.places[key];
+      if (place) stops.push({ nodeId, key, place, index: stops.length + 1 });
+    }
+  }
+  return stops;
+}
+
+export function collectDates(doc: Doc, contexts: Map<NodeId, NodeContext>, id: NodeId): Map<ISODate, NodeId[]> {
+  const byDate = new Map<ISODate, NodeId[]>();
+  for (const nodeId of scope(doc, id)) {
+    for (const iso of new Set(contexts.get(nodeId)?.ownDates ?? [])) {
+      byDate.set(iso, [...(byDate.get(iso) ?? []), nodeId]);
+    }
+  }
+  return new Map([...byDate].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/** Readable text for compact places like calendar cells; a calendar already shows the date. */
+export function plainText(text: string, { dates = true } = {}): string {
+  return tokenize(text)
+    .map((s) => {
+      if (s.kind === 'text') return displayText(s.text);
+      if (s.kind === 'place') return s.name;
+      if (s.kind === 'date') return dates ? s.raw : '';
+      return '';
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s—–\-:,·]+/, '')
+    .trim();
+}

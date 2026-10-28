@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
 import type { NodeId } from '../model/types';
-import { tokenize } from '../syntax/tokenize';
+import { displayText, tokenize } from '../syntax/tokenize';
 import { DateChip, FormulaChip, PlaceChip } from './Chips';
 import { useStore } from './store';
 
@@ -23,7 +23,7 @@ export function RichText({ nodeId, text, onActivate, hideFormulas }: Props) {
       {segments.map((s, i) => {
         switch (s.kind) {
           case 'text':
-            return <span key={i}>{s.text}</span>;
+            return <span key={i}>{displayText(s.text)}</span>;
           case 'place':
             return <PlaceChip key={i} placeKey={s.key} name={s.name} />;
           case 'date':

@@ -4,10 +4,15 @@ type Spec = { text: string; view?: ViewKind; children?: Spec[] };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** Dates are relative to today so the weather formulas land inside the forecast window. */
+/**
+ * Dates are relative to today so the weather formulas land inside the forecast
+ * window. The year is spelled out only when it differs from today's, since
+ * yearless dates resolve to the current year.
+ */
 function day(today: Date, offset: number): string {
   const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
+  const year = d.getFullYear() === today.getFullYear() ? '' : ` ${d.getFullYear()}`;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}${year}`;
 }
 
 export function sampleDoc(today = new Date()): Doc {
@@ -59,7 +64,7 @@ export function sampleDoc(today = new Date()): Doc {
       ],
     },
     {
-      text: 'How this works: type @Place or @[Multi Word Place], dates like Nov 3, and formulas in {braces}. End a bullet with /map, /calendar or /table and press Enter to add a view of everything under it.',
+      text: 'How this works: type \\@Place or \\@[Multi Word Place], dates like Nov 3, and formulas in \\{braces}. End a bullet with /map, /calendar or /table and press Enter to add a view of everything under it.',
     },
   ];
 

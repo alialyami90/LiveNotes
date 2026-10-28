@@ -149,6 +149,7 @@ interface Doc {
 | `place` | `@Word` or `@[Multi Word Name]` | `@Word` stops at whitespace or punctuation. The key is lowercased and trimmed. |
 | `date` | `2026-11-03`, `Nov 3`, `3 Nov`, `November 3, 2026`, `Nov 3 2026` | Without a year, the year comes from the nearest ancestor date, else the current year (resolved in `context/`). |
 | `formula` | `{ … }` | Braces nest-count. An unclosed `{` is plain text. |
+| escape | `\@`, `\{` | Stays literal text (backslash hidden when rendered by `displayText`). |
 
 Text inside `{…}` is formula source and is **not** scanned for date mentions.
 Inside a formula, `@Name` is a place literal.
@@ -250,7 +251,7 @@ interface Services {
 
 | Service | Endpoint (all free, no API key) |
 |---|---|
-| Geocoding | `https://geocoding-api.open-meteo.com/v1/search?name=…&count=1` |
+| Geocoding | `https://photon.komoot.io/api/?q=…&limit=1` (OSM-based Photon: finds points of interest like "Belém Tower", not just towns) |
 | Weather | `https://api.open-meteo.com/v1/forecast?latitude&longitude&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date&end_date` |
 | Routing | `https://router.project-osrm.org/route/v1/driving/{lon,lat};{lon,lat}?overview=full&geometries=geojson` |
 | Map tiles | `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, with OSM attribution shown |
@@ -260,7 +261,10 @@ Rules:
 - Failures surface as `error` values or chips. **Never substitute fake data** in
   the shipped app. Fakes exist only in tests.
 - Geocoding results are written into `doc.places` (one network hit per name,
-  ever).
+  ever). Mentions in the row being edited are geocoded only after it loses
+  focus, so half-typed names (`@Lis`) are never looked up.
+- Formulas get places through an async `resolvePlace(key)`, so a formula is
+  simply *pending* while its place is being geocoded.
 - `memo.ts` deduplicates in-flight and completed calls for the session.
 
 ---
@@ -268,14 +272,14 @@ Rules:
 ## 6. Views (`ui/views/`)
 
 A view is attached to a node (`node.view`) and renders that node's **subtree**
-directly beneath it. The user toggles it from the node's `⋯` menu, or by typing
-`/map`, `/calendar`, `/table` or `/none` as the whole content of a node and
-pressing Enter.
+directly beneath it. The user toggles it with the row's hover buttons
+(🗺️ 📅 ▦), or by ending the node's text with `/map`, `/calendar`, `/table`
+or `/none` and pressing Enter. The command is stripped from the text.
 
 | View | Shows |
 |---|---|
-| **Map** | One numbered marker per resolved place mention in the subtree, in document order. Markers are joined by a dashed line in visit order, and the map fits its bounds. Clicking a marker focuses its node. |
-| **Calendar** | Month grid(s) spanning the subtree's dates. Each day lists the nodes whose *own* text mentions that date. Clicking an entry focuses the node. |
+| **Map** | One numbered marker per resolved place mention in the node and its subtree, in document order. Markers are joined by a dashed line in visit order, and the map fits its bounds. Clicking a marker focuses its node. |
+| **Calendar** | A Monday-first grid covering only the weeks between the first and last date in the subtree. Each day lists the nodes whose *own* text mentions that date, with the date itself stripped from the label. Clicking an entry focuses the node. |
 | **Table** | One row per direct child: text (rendered, without formulas), place, date, then one column per formula in that row. A light, grid-like lens on the list. |
 
 **Linked hover (`ui/hover.ts`).** A tiny shared store holding the hovered
@@ -307,6 +311,16 @@ a marker or entry highlights the row.
   exercises every feature.
 
 ---
+
+### 7.1 Running it
+
+```
+npm install
+npm run dev        # http://localhost:5173
+npm test           # vitest
+npm run typecheck
+npm run build
+```
 
 ## 8. Testing & verification
 
