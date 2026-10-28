@@ -59,7 +59,7 @@ export function sampleDoc(today = new Date()): Doc {
       ],
     },
     {
-      text: 'How this works: type @Place or @[Multi Word Place], dates like Nov 3, and formulas in {braces}. Try /map, /calendar or /table on an empty bullet.',
+      text: 'How this works: type @Place or @[Multi Word Place], dates like Nov 3, and formulas in {braces}. End a bullet with /map, /calendar or /table and press Enter to add a view of everything under it.',
     },
   ];
 
