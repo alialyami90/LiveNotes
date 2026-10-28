@@ -1,16 +1,10 @@
 import { useRef, type ChangeEvent } from 'react';
 import { parseImport } from '../model/storage';
 import { sampleDoc } from '../model/sample';
+import { exportDocument } from '../platform/export';
 import { useStore } from './store';
 import { Outline } from './Outline';
 import { MobileToolbar } from './MobileToolbar';
-
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export function App() {
   const { doc, replaceDoc } = useStore();
@@ -38,7 +32,14 @@ export function App() {
           </div>
         </div>
         <nav className="actions">
-          <button type="button" onClick={() => download('livenotes.json', JSON.stringify(doc, null, 2))}>
+          <button
+            type="button"
+            onClick={() =>
+              exportDocument(JSON.stringify(doc, null, 2)).catch((e: unknown) =>
+                alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`),
+              )
+            }
+          >
             Export
           </button>
           <button type="button" onClick={() => fileRef.current?.click()}>
