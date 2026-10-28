@@ -1,0 +1,63 @@
+name: Android APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Fail before Gradle if the web app itself is broken.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk livenotes-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: livenotes-debug-apk
+          path: livenotes-debug.apk
+
+      # A rolling pre-release gives a direct download link that works on a phone.
+      - name: Publish to the android-latest pre-release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --cleanup-tag --yes || true
+          gh release create android-latest livenotes-debug.apk \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "LiveNotes Android (debug, latest)" \
+            --notes "Debug build of ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}. Install on Android by allowing 'Install unknown apps' for your browser or file manager."

@@ -402,9 +402,9 @@ differences live in `src/platform/` and in CSS.
 | Build | The sandbox can't reach Google's Android SDK hosts, so APKs are built by **GitHub Actions** (`.github/workflows/android.yml`). |
 | Output | A **debug APK** for sideloading. |
 | Data & network | `localStorage` persists in the WebView. The data APIs are HTTPS with permissive CORS, so they work from Capacitor's `https://localhost` origin unchanged. |
-| Phone toolbar | Soft keyboards have no Tab, and Backspace is unreliable. When a row is focused on a touch device (`pointer: coarse`), a toolbar sits at the bottom of the screen with outdent, indent, move up, move down, collapse and delete bullet. Its buttons `preventDefault` on pointer/mouse down so the editor keeps focus and the keyboard stays up. |
+| Phone toolbar | Soft keyboards have no Tab, and Backspace is unreliable. When a row is focused on a touch device (`pointer: coarse`), a toolbar sits at the bottom of the screen with outdent, indent, move up, move down, collapse and delete bullet, plus the view toggles. Its buttons `preventDefault` on pointer/mouse down so the editor keeps focus and the keyboard stays up. |
 | Export | Blob downloads don't work in a WebView. On native, `src/platform/export.ts` writes `livenotes.json` to the cache directory (`@capacitor/filesystem`) and opens the Android share sheet (`@capacitor/share`). On the web it downloads as before. Import uses `<input type=file>`, which Capacitor supports natively. |
-| Touch UI | Row view buttons are always visible under `(hover: none)`. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
+| Touch UI | On touch-only screens, the row view buttons move into the editing toolbar as 🗺️ 📅 ▦ toggles for the focused row, so rows keep their full width. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
 
 **CI workflow:** on every push and on manual dispatch it runs:
 

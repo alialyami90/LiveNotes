@@ -2,7 +2,7 @@ import type { NodeId, ViewKind } from '../model/types';
 import { setView } from '../model/ops';
 import { useStore } from './store';
 
-const VIEWS: { kind: ViewKind; label: string; icon: string }[] = [
+export const VIEWS: { kind: ViewKind; label: string; icon: string }[] = [
   { kind: 'map', label: 'Map view', icon: '🗺️' },
   { kind: 'calendar', label: 'Calendar view', icon: '📅' },
   { kind: 'table', label: 'Table view', icon: '▦' },

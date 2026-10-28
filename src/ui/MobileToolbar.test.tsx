@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode } from '../model/types';
 import type { Services } from '../services/types';
@@ -75,6 +75,18 @@ describe('MobileToolbar', () => {
     await user.click(screen.getByRole('button', { name: 'Indent' }));
     const after = screen.getByRole('textbox') as HTMLTextAreaElement;
     expect(after.selectionStart).toBe(3);
+  });
+
+  it('toggles a view on the focused row and keeps editing it', async () => {
+    const { user, container } = setup(build([['a', 'Day 1']]));
+    await user.click(screen.getByText('Day 1'));
+    const toolbar = screen.getByRole('toolbar');
+    await user.click(within(toolbar).getByRole('button', { name: 'Table view' }));
+    expect(container.querySelector('li[data-node-id="a"] [data-view="table"]')).not.toBeNull();
+    expect(within(toolbar).getByRole('button', { name: 'Table view' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('textbox')).toHaveFocus();
+    await user.click(within(toolbar).getByRole('button', { name: 'Table view' }));
+    expect(container.querySelector('[data-view]')).toBeNull();
   });
 
   it('deletes the focused bullet and edits the previous one', async () => {

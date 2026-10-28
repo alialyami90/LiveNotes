@@ -1,6 +1,7 @@
 import { useSyncExternalStore, type SyntheticEvent } from 'react';
 import type { Doc, NodeId, OpResult } from '../model/types';
-import { deleteNode, indent, moveDown, moveUp, outdent, toggleCollapse } from '../model/ops';
+import { deleteNode, indent, moveDown, moveUp, outdent, setView, toggleCollapse } from '../model/ops';
+import { VIEWS } from './NodeMenu';
 import { useStore } from './store';
 
 const COARSE = '(pointer: coarse)';
@@ -39,9 +40,13 @@ export function MobileToolbar({ forceVisible = false }: { forceVisible?: boolean
   const coarse = useCoarsePointer();
   if (!focus || !(coarse || forceVisible)) return null;
 
-  const run = (a: Action) => {
+  const caretNow = () => {
     const editor = document.activeElement;
-    const caret = editor instanceof HTMLTextAreaElement ? editor.selectionStart : focus.caret;
+    return editor instanceof HTMLTextAreaElement ? editor.selectionStart : focus.caret;
+  };
+
+  const run = (a: Action) => {
+    const caret = caretNow();
     if (a.label === 'Delete bullet' && doc.nodes[focus.id].children.length > 0 && !confirm('Delete this bullet and everything under it?')) return;
     apply((d) => a.op(d, focus.id), a.keepFocus ? { id: focus.id, caret } : undefined);
   };
@@ -61,6 +66,25 @@ export function MobileToolbar({ forceVisible = false }: { forceVisible?: boolean
           {a.icon}
         </button>
       ))}
+      <span className="toolbar-sep" aria-hidden />
+      {VIEWS.map((v) => {
+        const on = doc.nodes[focus.id].view === v.kind;
+        return (
+          <button
+            key={v.kind}
+            type="button"
+            className="toolbar-view"
+            aria-label={v.label}
+            title={v.label}
+            aria-pressed={on}
+            onPointerDown={keepEditorFocus}
+            onMouseDown={keepEditorFocus}
+            onClick={() => apply((d) => setView(d, focus.id, on ? undefined : v.kind), { id: focus.id, caret: caretNow() })}
+          >
+            {v.icon}
+          </button>
+        );
+      })}
     </div>
   );
 }

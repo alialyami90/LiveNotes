@@ -30,7 +30,8 @@ export default function MapView({ id }: { id: NodeId }) {
 
   useEffect(() => {
     if (!el.current) return;
-    const m = L.map(el.current, { scrollWheelZoom: false, zoomControl: true });
+    // On touch screens one finger keeps scrolling the page; pinch still zooms.
+    const m = L.map(el.current, { scrollWheelZoom: false, zoomControl: true, dragging: !L.Browser.mobile });
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',

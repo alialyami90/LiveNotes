@@ -304,6 +304,9 @@ li.is-hovered > .row { background: var(--hover); }
   .page { margin: 16px; padding: 20px 16px; }
   .node-menu { opacity: 1; }
   .view { margin-left: 0; }
+  .brand p { display: none; }
+  .actions button { padding: 4px 10px; font-size: 13px; }
+  .outline ul { padding-left: 18px; }
 }
 
 .crash { max-width: 560px; margin: 80px auto; padding: 24px; }
@@ -318,8 +321,9 @@ body {
 }
 .topbar { padding-top: calc(12px + env(safe-area-inset-top)); }
 
-@media (hover: none) {
-  .node-menu { opacity: 1; }
+/* Touch screens: view toggles live in the editing toolbar, so rows keep their width. */
+@media (hover: none) and (pointer: coarse) {
+  .node-menu { display: none; }
 }
 
 .mobile-toolbar {
@@ -346,4 +350,8 @@ body {
   touch-action: manipulation;
 }
 .mobile-toolbar button:active { background: var(--line); }
-.mobile-toolbar ~ .page, .app:has(.mobile-toolbar) .page { margin-bottom: 96px; }
+.mobile-toolbar button { padding: 0; min-width: 0; }
+.mobile-toolbar .toolbar-view { filter: grayscale(1); opacity: 0.6; }
+.mobile-toolbar .toolbar-view[aria-pressed='true'] { filter: none; opacity: 1; background: var(--line); }
+.toolbar-sep { flex: none; width: 1px; margin: 6px 2px; background: var(--line); }
+.app:has(.mobile-toolbar) .page { margin-bottom: 96px; }
