@@ -166,8 +166,8 @@ export function LibraryProvider({ children, storage, today = localToday() }: Pro
     else unsaved.current.add(id);
   }, []);
   const takeUnsaved = useCallback(() => {
-    // A note deleted for good has nothing left to save.
-    const any = [...unsaved.current].some((id) => library.list().some((m) => m.id === id));
+    // A deleted note has nothing worth reporting: gone for good, or the Undo bar is already up.
+    const any = [...unsaved.current].some((id) => library.list().some((m) => m.id === id && m.deletedAt === undefined));
     unsaved.current.clear();
     return any;
   }, [library]);

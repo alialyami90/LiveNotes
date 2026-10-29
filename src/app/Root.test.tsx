@@ -274,6 +274,30 @@ describe('Leaving a note whose save failed', () => {
     expect(alert).toHaveBeenCalledTimes(1);
   });
 
+  it('stays quiet about a note that was just deleted (Undo shows instead)', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    history.replaceState({ livenotesDepth: 0 }, '', '#/'); // the app's stamped first entry
+    const { user } = setup(storage);
+    await user.click(screen.getByRole('link', { name: /Trip/ }));
+    await screen.findByText('alpha');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const setItem = storage.setItem.bind(storage);
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (k === noteKey('A')) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    await user.click(screen.getByText('alpha'));
+    await user.keyboard('{End}!');
+    await screen.findByRole('alert');
+    await user.click(screen.getByRole('button', { name: 'Note menu' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(home()).not.toBeNull());
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(alert).not.toHaveBeenCalled();
+  });
+
   it('stays quiet when the retry on leaving succeeds', async () => {
     const storage = memoryStorage();
     seeded(storage, ['A']).create(doc('alpha', 'Trip'));
