@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc, OutlineNode } from './types';
 import {
-  deleteNode, indent, insertAfter, moveDown, moveUp, outdent, removeOrMerge, setPlace, setText, setTitle, setView, splitNode, toggleCollapse,
+  deleteNode, indent, insertAfter, moveDown, moveUp, outdent, removeOrMerge, addFirstChild, setPlace, setText, setTitle, setView, splitNode, toggleCollapse,
 } from './ops';
 import { ancestors, parentOf, subtree, visibleOrder } from './tree';
 
@@ -183,6 +183,26 @@ describe('ops', () => {
     expect(setTitle(setTitle(d, 'x').doc, '').doc.title).toBe('');
   });
 
+  it('addFirstChild appends one empty bullet under the root and focuses it at caret 0', () => {
+    const d = deepFreeze(build([]));
+    const r = addFirstChild(d);
+    const top = r.doc.nodes.root.children;
+    expect(top).toHaveLength(1);
+    expect(r.doc.nodes[top[0]]).toEqual({ id: top[0], text: '', children: [] });
+    expect(r.focus).toEqual({ id: top[0], caret: 0 });
+    expect(d.nodes.root.children).toEqual([]);
+    expect(Object.keys(d.nodes)).toEqual(['root']);
+  });
+
+  it('addFirstChild keeps existing top-level bullets and appends after them', () => {
+    const d = deepFreeze(build([['a']]));
+    const r = addFirstChild(d);
+    const top = r.doc.nodes.root.children;
+    expect(top).toHaveLength(2);
+    expect(top[0]).toBe('a');
+    expect(r.focus?.id).toBe(top[1]);
+  });
+
   it('ops never mutate the input doc', () => {
     const d = deepFreeze(build([['a', [['a1']]], ['bc', [['b1']]], ['']]));
     expect(() => {
@@ -200,6 +220,7 @@ describe('ops', () => {
       setPlace(d, 'k', { name: 'k', lat: 0, lon: 0 });
       deleteNode(d, 'bc');
       setTitle(d, 'Trip');
+      addFirstChild(d);
     }).not.toThrow();
   });
 });

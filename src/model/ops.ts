@@ -33,6 +33,13 @@ export function insertAfter(doc: Doc, id: NodeId, text = ''): OpResult {
   return { doc: withNodes(doc, [updated, node]), focus: { id: node.id, caret: 0 } };
 }
 
+/** Appends an empty bullet under the root; for outlines that have nothing to insert after. */
+export function addFirstChild(doc: Doc): OpResult {
+  const root = doc.nodes[doc.rootId];
+  const node: OutlineNode = { id: newId(), text: '', children: [] };
+  return { doc: withNodes(doc, [insertChild(root, node.id, root.children.length), node]), focus: { id: node.id, caret: 0 } };
+}
+
 /**
  * Enter: text after the caret moves to a new node. At the very start, an empty
  * node goes above instead, so the node keeps its children and context. An

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode } from '../model/types';
 import type { Services } from '../services/types';
@@ -78,6 +78,17 @@ describe('TitleField', () => {
     const editor = container.querySelector('li[data-node-id] textarea');
     expect(editor).toHaveFocus();
     expect(title()).toHaveValue('Weekend');
+  });
+
+  it('ignores Enter while an IME composition is active', () => {
+    const { container } = setup(build([]), true);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true });
+    act(() => {
+      title().dispatchEvent(ev);
+    });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(title()).toHaveFocus();
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(0);
   });
 
   it('strips newlines from pasted text', async () => {

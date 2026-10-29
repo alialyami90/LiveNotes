@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
-import { setTitle } from '../model/ops';
+import { addFirstChild, setTitle } from '../model/ops';
 import { useStore } from '../ui/store';
 import './note.css';
 
@@ -32,15 +32,7 @@ export function TitleField({ autoFocus = false }: { autoFocus?: boolean }) {
       setFocus({ id: first, caret: 0 });
       return;
     }
-    // Same as Outline's "Start typing…" button, which we may not touch from here.
-    apply((d) => {
-      const node = { id: crypto.randomUUID(), text: '', children: [] };
-      const root = d.nodes[d.rootId];
-      return {
-        doc: { ...d, nodes: { ...d.nodes, [node.id]: node, [root.id]: { ...root, children: [node.id] } } },
-        focus: { id: node.id, caret: 0 },
-      };
-    });
+    apply(addFirstChild);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

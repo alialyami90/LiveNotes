@@ -3,7 +3,11 @@
   display: block;
   width: 100%;
   margin: 0 0 8px;
-  padding: 0;
+  /* 44px is the touch-target floor; padding (not a fixed height) keeps auto-grow honest.
+     2rem * 1.2 line = 38.4px of text + 2 * 3px padding = 44.4px for one line. */
+  min-height: 44px;
+  padding: 3px 0;
+  box-sizing: border-box;
   border: 0;
   outline: none;
   resize: none;
