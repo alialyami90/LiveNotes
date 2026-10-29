@@ -69,6 +69,8 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
   let metas: NoteMeta[] = [];
   /** Notes whose first write failed at construction; kept so the session still works. */
   const pending = new Map<string, Doc>();
+  /** The note made from the legacy doc, until it is stored; then the legacy key can go. */
+  let legacyNoteId: string | null = null;
 
   const get = (k: string): string | null => {
     try {
@@ -86,13 +88,46 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
    */
   const sync = () => {
     const stored = validIndex(parse(get(INDEX_KEY)));
-    if (stored) metas = stored;
+    if (!stored) return;
+    // A note held in memory is in no stored index yet; keep it, so the next index write stores it.
+    const held = metas.filter((m) => pending.has(m.id) && !stored.some((s) => s.id === m.id));
+    metas = [...stored, ...held];
   };
 
-  /** Memory changes only after the write succeeds, so a failed write leaves state consistent. */
+  /**
+   * Memory changes only after the write succeeds, so a failed write leaves state consistent.
+   * Notes held in memory are stored first, so the index never lists one whose key was never tried.
+   */
   const writeIndex = (next: NoteMeta[]) => {
+    const stored: string[] = [];
+    for (const [id, doc] of pending) {
+      if (!next.some((m) => m.id === id)) continue;
+      try {
+        storage.setItem(noteKey(id), JSON.stringify(doc));
+        stored.push(id);
+      } catch {
+        // still held; the next launch restores it from the legacy key (adoptLegacy)
+      }
+    }
     storage.setItem(INDEX_KEY, JSON.stringify({ version: 1, notes: next }));
     metas = next;
+    for (const id of stored) pending.delete(id);
+    finishLegacy();
+  };
+
+  /** The legacy key is the only copy until its note is both stored and listed. */
+  function finishLegacy() {
+    if (legacyNoteId === null || pending.has(legacyNoteId) || !metas.some((m) => m.id === legacyNoteId)) return;
+    legacyNoteId = null;
+    removeLegacy();
+  }
+
+  const removeLegacy = () => {
+    try {
+      storage.removeItem(LEGACY_KEY);
+    } catch (e) {
+      console.warn('LiveNotes: could not remove the legacy note', e);
+    }
   };
 
   function scanNotes(): NoteMeta[] | null {
@@ -127,29 +162,61 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
     return rebuilt;
   }
 
-  function migrate() {
+  // An unreadable legacy value is left alone: it is the only copy there is.
+  const readLegacy = (): Doc | null => {
     const legacy = parse(get(LEGACY_KEY));
-    const legacyDoc = isDoc(legacy) ? legacy : null;
-    // An unreadable legacy value is left alone: it is the only copy there is.
-    const doc = legacyDoc ?? sampleNote(today());
+    return isDoc(legacy) ? legacy : null;
+  };
+
+  /** Note key, then index, then (for the legacy doc) the legacy key. A failure keeps it in memory. */
+  function storeAtLaunch(doc: Doc, fromLegacy: boolean) {
     const meta = metaFor(newId(), doc, now());
-    metas = [meta];
+    if (fromLegacy) legacyNoteId = meta.id;
     try {
       storage.setItem(noteKey(meta.id), JSON.stringify(doc));
-      writeIndex(metas);
+      writeIndex([...metas, meta]);
     } catch (e) {
-      // Keep the legacy key so the next launch retries.
+      // The legacy key stays, so the next launch retries.
       console.warn('LiveNotes: could not save the migrated note', e);
       discardOrphan(meta.id);
+      metas = [...metas, meta];
       pending.set(meta.id, doc);
+    }
+  }
+
+  function migrate() {
+    const legacyDoc = readLegacy();
+    metas = [];
+    storeAtLaunch(legacyDoc ?? sampleNote(today()), !!legacyDoc);
+  }
+
+  const storedJson = (id: string): string | null => {
+    const raw = get(noteKey(id));
+    return raw === null ? null : JSON.stringify(parse(raw));
+  };
+
+  /**
+   * A legacy doc next to an index means an earlier migration did not finish (a failed write,
+   * then a later save wrote the index). Whatever happened, the legacy doc must end up as a note.
+   */
+  function adoptLegacy() {
+    const legacy = readLegacy();
+    if (!legacy) return;
+    const json = JSON.stringify(legacy);
+    if (metas.some((m) => storedJson(m.id) === json)) return removeLegacy();
+    // Listed but its key never written: the migrated note itself, so restore it under its id.
+    const want = summarize(legacy).searchText;
+    const lost = metas.find((m) => get(noteKey(m.id)) === null && m.summary.searchText === want);
+    if (!lost) return storeAtLaunch(legacy, true);
+    legacyNoteId = lost.id;
+    try {
+      storage.setItem(noteKey(lost.id), json);
+    } catch (e) {
+      console.warn('LiveNotes: could not restore the migrated note', e);
+      pending.set(lost.id, legacy);
       return;
     }
-    if (!legacyDoc) return;
-    try {
-      storage.removeItem(LEGACY_KEY);
-    } catch (e) {
-      console.warn('LiveNotes: could not remove the legacy note', e);
-    }
+    finishLegacy();
   }
 
   /** A note key with no index entry is a full-size copy that a later rebuild could resurface as a duplicate. */
@@ -206,6 +273,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
   if (loaded) {
     metas = loaded;
     purgeStale();
+    adoptLegacy();
   } else {
     migrate();
   }

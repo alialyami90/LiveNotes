@@ -100,6 +100,84 @@ describe('migration and first launch', () => {
     expect([...store.m.keys()].filter((k) => k.startsWith('livenotes:note:'))).toEqual([noteKey(lib.list()[0].id)]);
   });
 
+  it('a failed migration followed by an index write in the same session still ends with the legacy note readable', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const legacy = doc('Old note');
+    const store = memStore({ [LEGACY_KEY]: JSON.stringify(legacy) });
+    const set = store.setItem;
+    store.setItem = () => {
+      throw new Error('quota');
+    };
+    const { lib } = setup(store);
+    store.setItem = set; // space freed later in the session
+    lib.create(doc('Other'));
+    const next = setup(store).lib;
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    const titles = next.list().map((m) => next.read(m.id)?.title);
+    expect(titles.sort()).toEqual(['Old note', 'Other']);
+  });
+
+  it("restores the legacy note under its listed id when only its note key never got written", () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const legacy = doc('Old note');
+    const store = memStore({ [LEGACY_KEY]: JSON.stringify(legacy) });
+    const set = store.setItem;
+    let indexOk = false;
+    store.setItem = (k, v) => {
+      if (k === noteKey('id1') || (k === INDEX_KEY && !indexOk)) throw new Error('quota');
+      set(k, v);
+    };
+    const { lib } = setup(store);
+    indexOk = true;
+    lib.create(doc('Other')); // lists id1, whose key still cannot be written
+    expect(store.m.get(INDEX_KEY)).toContain('id1');
+    expect(store.m.has(noteKey('id1'))).toBe(false);
+    store.setItem = set;
+    const next = setup(store).lib;
+    expect(next.list().map((m) => m.id).sort()).toEqual(['id1', 'id2']);
+    expect(next.read('id1')).toEqual(legacy);
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+  });
+
+  it('removes only the legacy key when a stored note already equals it', () => {
+    const legacy = doc('Old note');
+    const { lib, store } = setup(memStore({ [LEGACY_KEY]: JSON.stringify(legacy) }));
+    expect(lib.list()).toHaveLength(1);
+    store.m.set(LEGACY_KEY, JSON.stringify(legacy, null, 2)); // say its removal failed back then
+    const next = setup(store).lib;
+    expect(next.list()).toHaveLength(1);
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    expect([...store.m.keys()].filter((k) => k.startsWith('livenotes:note:'))).toHaveLength(1);
+  });
+
+  it('migrates a legacy doc found beside an existing library as a new note', () => {
+    const { lib, store } = setup();
+    lib.create(doc('Existing'));
+    store.m.set(LEGACY_KEY, JSON.stringify(doc('Left behind')));
+    const next = setup(store).lib;
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    expect(next.list().map((m) => m.summary.title)).toContain('Left behind');
+    const meta = next.list().find((m) => m.summary.title === 'Left behind')!;
+    expect(next.read(meta.id)?.title).toBe('Left behind');
+  });
+
+  it('saving the in-memory migrated note finishes the migration, so no older copy comes back', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = memStore({ [LEGACY_KEY]: JSON.stringify(doc('Old note')) });
+    const set = store.setItem;
+    store.setItem = () => {
+      throw new Error('quota');
+    };
+    const { lib } = setup(store);
+    store.setItem = set;
+    const id = lib.list()[0].id;
+    lib.save(id, doc('Old note, edited'));
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    const next = setup(store).lib;
+    expect(next.list()).toHaveLength(1);
+    expect(next.read(id)?.title).toBe('Old note, edited');
+  });
+
   it('survives every write failing at construction (first launch)', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const store = memStore();
