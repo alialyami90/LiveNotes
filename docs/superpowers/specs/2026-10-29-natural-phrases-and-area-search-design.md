@@ -1,6 +1,6 @@
 # Natural-language routes and weather, place kinds, area search: design
 
-Status: written, waiting for the owner's review. Product truth: `PRODUCT.md`.
+Status: approved by the owner (2026-10-29). Product truth: `PRODUCT.md`.
 Engineering spec: `CLAUDE.md`.
 
 ## 1. What the owner asked for (confirmed answers)
@@ -353,7 +353,7 @@ The extra bbox request is one more queued Photon call per picker search. The
 - Chips: weather and travel chips, the Directions link, icons.
 - The place picker: the divider and icons.
 
-**Browser checks:** add these to the scratchpad e2e script:
+**Browser checks:** add these to `scripts/e2e.cjs`:
 
 - a weather chip
 - "to @Porto" → popup → Drive → travel chip
