@@ -83,8 +83,20 @@ describe('travel-mode popup', () => {
     const { user, container } = setup();
     await edit(user, container);
     await user.keyboard('{End} to @porto ');
-    fireEvent.mouseEnter(screen.getByRole('option', { name: 'Bike' }));
+    fireEvent.mouseMove(screen.getByRole('option', { name: 'Bike' }), { movementX: 2, movementY: 1 });
     expect(screen.getByRole('option', { name: 'Bike' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('a row that appears under a resting pointer is not selected (the pointer did not move)', async () => {
+    const { user, container } = setup();
+    await edit(user, container);
+    await user.keyboard('{End} to @porto ');
+    // What the browser sends when the popup opens under the cursor left there by a click on the place picker.
+    const drive = screen.getByRole('option', { name: 'Drive' });
+    fireEvent.mouseOver(drive);
+    fireEvent.mouseEnter(drive);
+    fireEvent.mouseMove(drive, { movementX: 0, movementY: 0 });
+    for (const o of screen.getAllByRole('option')) expect(o).toHaveAttribute('aria-selected', 'false');
   });
 
   it('Tab chooses the selected mode instead of indenting', async () => {

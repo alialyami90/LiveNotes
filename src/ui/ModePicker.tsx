@@ -27,7 +27,12 @@ export function ModePicker({ active, onPick, onHover }: Props) {
           className={`picker-option${i === active ? ' is-active' : ''}`}
           onPointerDown={keepEditorFocus}
           onMouseDown={keepEditorFocus}
-          onMouseEnter={() => onHover(i)}
+          // Only a pointer that actually moves selects a row. The popup often opens right under
+          // the cursor left by a click on the place picker, and the browser then reports a
+          // mouseenter (and a still mousemove); selecting there would make Enter choose (C1).
+          onMouseMove={(e) => {
+            if (e.movementX || e.movementY) onHover(i);
+          }}
           onClick={() => onPick(i)}
         >
           <span className="picker-icon" aria-hidden="true">
