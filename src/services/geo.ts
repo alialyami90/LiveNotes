@@ -38,6 +38,15 @@ export function areaOf(p: Place): Box {
   return [clamp(p.lon - dLon, -180, 180), clamp(p.lat - dLat, -90, 90), clamp(p.lon + dLon, -180, 180), clamp(p.lat + dLat, -90, 90)];
 }
 
+/**
+ * The area to search a parent place's children in, if it has a meaningful one. A
+ * country or region geocoded without an extent would get a 30 km box around its
+ * centre, which means nothing (M3), so it has none and searches stay biased only.
+ */
+export function searchArea(p: Place): Box | undefined {
+  return p.kind === 'region' && !isBox(p.extent) ? undefined : areaOf(p);
+}
+
 export function inArea(p: Pick<Place, 'lat' | 'lon'>, [west, south, east, north]: Box): boolean {
   return p.lon >= west && p.lon <= east && p.lat >= south && p.lat <= north;
 }

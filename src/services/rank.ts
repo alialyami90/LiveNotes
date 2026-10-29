@@ -1,6 +1,6 @@
 import type { Place } from '../model/types';
 import type { Found } from './types';
-import { areaOf, haversine, inArea } from './geo';
+import { haversine, inArea, searchArea } from './geo';
 
 /** Ranking and merging of place candidates (spec §6). Pure: no fetch. */
 
@@ -26,6 +26,18 @@ export const toPlace = ({ name, lat, lon, label, kind, extent }: Candidate): Pla
 
 export const isNear = (p: Place, near?: Place) => !near || haversine(p, near) <= NEAR_KM * 1000;
 export const isMajor = (p?: Candidate) => (p?.population ?? 0) >= MAJOR_CITY;
+const isSettlement = (p: Place) => p.kind === 'city' || p.kind === 'village';
+
+/**
+ * Geocode's automatic inside-the-area step (I4): the first in-area result that is not
+ * a `street` by icon kind (schools and other unknown kinds included). A real town
+ * within NEAR_KM wins over it, so an in-area restaurant called "Sitges" never beats
+ * Sitges; a far namesake ("Airport", California) does not, so @airport is El Prat.
+ */
+export function areaPick(area: Candidate[], town: Candidate | undefined, near: Place): Candidate | undefined {
+  if (town && isSettlement(town) && isNear(town, near)) return undefined;
+  return area.find((p) => p.kind !== 'street');
+}
 
 /** What each search stage has answered so far; a stage that hasn't answered is empty. */
 export interface SearchSources {
@@ -55,9 +67,9 @@ function dedupe(list: Candidate[], kept: Place[]): Candidate[] {
 export function mergeSearch({ towns, area, biased }: SearchSources, near?: Place): Found[] {
   const majors = towns.filter((p) => isMajor(p));
   const minor = towns.filter((p) => !isMajor(p));
-  if (!near) return dedupe([...majors, ...minor, ...area, ...biased], []).slice(0, SECTION_MAX).map(toPlace);
+  const box = near && searchArea(near);
+  if (!near || !box) return dedupe([...majors, ...minor, ...area, ...biased], []).slice(0, SECTION_MAX).map(toPlace);
 
-  const box = areaOf(near);
   const outside = (p: Candidate) => !inArea(p, box);
   const inside = [...towns, ...area, ...biased]
     .filter((p) => !outside(p))

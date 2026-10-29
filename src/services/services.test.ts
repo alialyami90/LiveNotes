@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Place } from '../model/types';
-import { areaOf, haversine, inArea, type Box } from './geo';
+import { areaOf, haversine, inArea, searchArea, type Box } from './geo';
 import { memoize } from './memo';
 import { httpServices, TransientError } from './http';
 import type { Services } from './types';
@@ -433,6 +433,39 @@ describe('the area around a parent place (areaOf, inArea)', () => {
   });
 });
 
+describe('a region parent without an extent has no area (M3)', () => {
+  const PORTUGAL: Place = { name: 'Portugal', lat: 39.6945, lon: -8.1302, kind: 'region' };
+  const BBOX = /photon\.komoot\.io.*bbox=/;
+
+  it('searchArea is undefined for such a region, and the area otherwise', () => {
+    expect(searchArea(PORTUGAL)).toBeUndefined();
+    expect(searchArea({ ...PORTUGAL, extent: [-9.5, 36.9, -6.2, 42.2] })).toEqual([-9.5, 36.9, -6.2, 42.2]);
+    expect(searchArea({ ...PORTUGAL, kind: 'city' })).toEqual(areaOf({ ...PORTUGAL, kind: 'city' }));
+  });
+
+  it('search and geocode skip the bbox stage and the section split, as the biased search did', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Tomar', 39.6, -8.41, 'Santarém', 'Portugal', 20000, 'PPL']) },
+      { match: PHOTON, respond: () => photon(['Tomar Castle', 39.6, -8.42, 'Tomar', 'Portugal', 'historic', 'castle']) },
+    ]);
+    const s = httpServices(f.fn, noSleep);
+    const results = await s.search('tomar', PORTUGAL);
+    expect(results.map((r) => [r.name, r.elsewhere])).toEqual([
+      ['Tomar', undefined],
+      ['Tomar Castle', undefined],
+    ]);
+    // Tomar is within 75 km of the region's centre, so it wins without the area stage.
+    expect(await s.geocode('tomar', PORTUGAL)).toMatchObject({ name: 'Tomar' });
+    expect(f.urls.filter((u) => BBOX.test(u))).toEqual([]);
+  });
+
+  it('a region with a valid extent still searches inside it', async () => {
+    const f = fakeFetch([{ match: OM, respond: () => ({ body: {} }) }, { match: PHOTON, respond: () => photon() }]);
+    await httpServices(f.fn, noSleep).search('x', { ...PORTUGAL, extent: [-9.5, 36.9, -6.2, 42.2] });
+    expect(f.urls.filter((u) => BBOX.test(u))).toHaveLength(1);
+  });
+});
+
 describe('searching inside the parent place first (spec §6)', () => {
   const BARCELONA: Place = { name: 'Barcelona', lat: 41.3874, lon: 2.1686 };
   const LISBON_NEAR: Place = { name: 'Lisbon', lat: 38.72, lon: -9.14 };
@@ -555,22 +588,38 @@ describe('searching inside the parent place first (spec §6)', () => {
     expect(bboxCalls).toBe(3);
   });
 
-  it('a failing bbox stage still leaves the Elsewhere rows, and geocode falls through to the worldwide result', async () => {
+  it('a failing bbox stage still leaves the Elsewhere rows in search', async () => {
     let bboxCalls = 0;
     const f = fakeFetch([
       { match: OM, respond: () => om(AIRPORT_US, MADRID) },
       { match: BBOX, respond: () => { bboxCalls++; return { status: 503 }; } },
       { match: PHOTON, respond: () => photon(GIRONA) },
     ]);
-    const s = httpServices(f.fn, noSleep);
-    const results = await s.search('airport', BARCELONA);
+    const results = await httpServices(f.fn, noSleep).search('airport', BARCELONA);
     expect(bboxCalls).toBe(3);
     expect(results.map((r) => [r.name, r.elsewhere])).toEqual([
       ['Madrid', true],
       ['Airport', true],
       ['Girona–Costa Brava Airport', true],
     ]);
-    expect(await s.geocode('airport', BARCELONA)).toMatchObject({ name: 'Girona–Costa Brava Airport', kind: 'airport' });
+  });
+
+  it('I5: when the area stage failed, geocode accepts a worldwide result inside the area', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(AIRPORT_US) },
+      { match: BBOX, respond: () => ({ status: 503 }) },
+      { match: PHOTON, respond: () => photon(EL_PRAT) },
+    ]);
+    expect(await httpServices(f.fn, noSleep).geocode('airport', BARCELONA)).toMatchObject({ name: 'Barcelona–El Prat Airport', kind: 'airport' });
+  });
+
+  it('I5: when the area stage failed, a worldwide result outside the area is TransientError, not a stored guess', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(AIRPORT_US, MADRID) },
+      { match: BBOX, respond: () => ({ status: 503 }) },
+      { match: PHOTON, respond: () => photon(GIRONA) },
+    ]);
+    await expect(httpServices(f.fn, noSleep).geocode('airport', BARCELONA)).rejects.toBeInstanceOf(TransientError);
   });
 
   it('rejects with TransientError when every source failed', async () => {
@@ -620,6 +669,35 @@ describe('searching inside the parent place first (spec §6)', () => {
     ]);
     expect(await httpServices(f.fn, noSleep).geocode('sintra', LISBON_NEAR)).toMatchObject({ name: 'Sintra', lat: 38.8, kind: 'city' });
     expect(f.urls.filter((u) => PHOTON.test(u))).toEqual([]);
+  });
+
+  // Sitges itself sits about 35 km from Barcelona, just outside the 30 km box.
+  const SITGES_TOWN: OmRow = ['Sitges', 41.2353, 1.78, 'Catalonia', 'Spain', 29000, 'PPL'];
+
+  it('I4: @Sitges under Barcelona is the town 35 km away, not an in-area restaurant named Sitges', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(SITGES_TOWN) },
+      { match: BBOX, respond: () => photon(['Sitges', 41.39, 2.17, 'Barcelona', 'Spain', 'amenity', 'restaurant']) },
+      { match: PHOTON, respond: () => photon(['Sitges', 41.39, 2.17, 'Barcelona', 'Spain', 'amenity', 'restaurant']) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('sitges', BARCELONA);
+    expect(p).toMatchObject({ name: 'Sitges', lat: 41.2353, lon: 1.78, kind: 'city' });
+  });
+
+  it('I4: @airport under Barcelona is still El Prat (the Open-Meteo "Airport" is far away)', async () => {
+    const f = fakeFetch(airportRoutes());
+    expect(await httpServices(f.fn, noSleep).geocode('airport', BARCELONA)).toMatchObject({ name: 'Barcelona–El Prat Airport' });
+  });
+
+  it('I4: an in-area school (icon kind street) is not taken by the area step, even with no town match', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => ({ body: {} }) },
+      { match: BBOX, respond: () => photon(['Sitges', 41.39, 2.17, 'Barcelona', 'Spain', 'amenity', 'school']) },
+      { match: PHOTON, respond: () => photon(['Sitges', 41.2353, 1.8117, 'Sitges', 'Spain', 'place', 'town']) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('sitges', BARCELONA);
+    expect(p).toMatchObject({ name: 'Sitges', lat: 41.2353, kind: 'city' });
+    expect(f.urls.filter((u) => PHOTON.test(u) && !BBOX.test(u))).toHaveLength(1);
   });
 
   it('drops a same-name place within 2 km that both Open-Meteo and the bbox return', async () => {

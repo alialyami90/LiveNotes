@@ -1,24 +1,12 @@
 import type { Place } from '../model/types';
-import type { Weather } from '../formula/values';
 import type { Services } from './types';
-import { areaOf, inArea, type Box } from './geo';
+import { inArea, searchArea, type Box } from './geo';
+import { describeWeather } from './wmo';
 import { isStreetTag, kindOfOpenMeteo, kindOfPhoton, photonExtent } from './kinds';
-import { isMajor, isNear, mergeSearch, toPlace, type Candidate, type SearchSources } from './rank';
+import { areaPick, isMajor, isNear, mergeSearch, toPlace, type Candidate, type SearchSources } from './rank';
 
 /** The service couldn't be reached or is overloaded; worth retrying later. */
 export class TransientError extends Error {}
-
-/** WMO weather interpretation codes, grouped coarsely. */
-function describeWeather(code: number): Pick<Weather, 'condition' | 'icon'> {
-  if (code === 0) return { condition: 'Clear', icon: '☀️' };
-  if (code <= 3) return { condition: 'Partly cloudy', icon: '⛅' };
-  if (code === 45 || code === 48) return { condition: 'Fog', icon: '🌫️' };
-  if (code >= 51 && code <= 67) return { condition: 'Rain', icon: '🌧️' };
-  if (code >= 71 && code <= 77) return { condition: 'Snow', icon: '🌨️' };
-  if (code >= 80 && code <= 86) return { condition: 'Showers', icon: '🌦️' };
-  if (code >= 95) return { condition: 'Thunderstorm', icon: '⛈️' };
-  return { condition: 'Cloudy', icon: '☁️' };
-}
 
 interface OpenMeteoGeoResponse {
   results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string; population?: number; feature_code?: string }[];
@@ -191,18 +179,23 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
       // would be stored for good; a retry later costs only a delay.
       if (om.transient) throw failure(om);
       const town = om.value[0];
+      const box = near && searchArea(near);
       // A major city, or a town inside the parent's area, is what the mention means.
-      if (town && (!near || isMajor(town) || inArea(town, areaOf(near)))) return toPlace(town);
-      // Then the best named place inside the area: "@airport" under Barcelona is El Prat.
-      const area = near ? await settle(photon(name, 5, near, 'background', undefined, areaOf(near))) : undefined;
-      const inside = area?.value.find((p) => !p.street);
+      if (town && (!near || isMajor(town) || (box && inArea(town, box)))) return toPlace(town);
+      // Then a named place inside the area: "@airport" under Barcelona is El Prat.
+      const area = box ? await settle(photon(name, 5, near, 'background', undefined, box)) : undefined;
+      const inside = near && area && areaPick(area.value, town, near);
       if (inside) return toPlace(inside);
       // Then the worldwide rules: a nearby town (once the area has really been searched),
       // else the biased landmark, which a street never is.
       if (town && isNear(town, near) && !area?.transient) return toPlace(town);
       const ph = await settle(photon(name, 1, near, 'background'));
       const landmark = ph.value[0];
-      if (landmark && !(landmark.street && town)) return toPlace(landmark);
+      if (landmark && !(landmark.street && town)) {
+        // I5: while the area couldn't be searched, only a result inside it can't be overruled by it.
+        if (area?.transient && box && !inArea(landmark, box)) throw failure(area);
+        return toPlace(landmark);
+      }
       // A far-away namesake is only acceptable once Photon has really answered, area search included.
       if (town && !ph.transient && !area?.transient) return toPlace(town);
       const tried = area ? [om, area, ph] : [om, ph];
@@ -219,9 +212,10 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
           if (!signal?.aborted) onUpdate?.(mergeSearch(sources, near));
           return r;
         });
+      const box = near && searchArea(near);
       const results = await Promise.all([
         stage('towns', openMeteo(query, 5)),
-        ...(near ? [stage('area', photon(query, 8, near, 'interactive', signal, areaOf(near)))] : []),
+        ...(box ? [stage('area', photon(query, 8, near, 'interactive', signal, box))] : []),
         // Still runs when the area stage fails: it fills the Elsewhere rows.
         stage('biased', photon(query, 5, near, 'interactive', signal)),
       ]);
