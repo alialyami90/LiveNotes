@@ -250,7 +250,8 @@ Property access: `route(a,b).duration`, `weather().high`, `here.name`.
 
 ```ts
 interface Services {
-  geocode(name: string): Promise<Place | null>;
+  geocode(name: string, near?: Place): Promise<Place | null>; // best match for a mention
+  search(query: string, near?: Place): Promise<Place[]>;      // candidates for the @ picker
   weather(p: Place, isoDate: string): Promise<Weather>;
   route(a: Place, b: Place): Promise<Route>;
 }
@@ -258,10 +259,31 @@ interface Services {
 
 | Service | Endpoint (all free, no API key) |
 |---|---|
-| Geocoding | `https://photon.komoot.io/api/?q=…&limit=1` (OSM-based Photon: finds points of interest like "Belém Tower", not just towns) |
+| Towns and cities | `https://geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=en` (GeoNames, ranked by population, so "lisbon" is Lisbon, Portugal, not Lisbon, Iowa) |
+| Landmarks | `https://photon.komoot.io/api/?q=…&limit=…&lang=en[&lat=…&lon=…]` (OSM-based, finds points of interest; biased toward the parent bullet's place) |
 | Weather | `https://api.open-meteo.com/v1/forecast?latitude&longitude&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date&end_date` |
 | Routing | `https://router.project-osrm.org/route/v1/driving/{lon,lat};{lon,lat}?overview=full&geometries=geojson` |
 | Map tiles | `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, with OSM attribution shown |
+
+**How a mention is resolved (`geocode`).**
+
+1. Ask Open-Meteo for the top match.
+2. If that match is within 75 km of the parent bullet's place (or there is no
+   parent place), use it.
+3. Otherwise ask Photon, biased to the parent place, and fall back to the
+   Open-Meteo result.
+
+`search` merges both sources. Near a known place, nearby landmarks come first;
+otherwise ranked towns come first. Duplicates within 2 km are dropped.
+
+**Network discipline** (proven necessary by the CI live check: Photon's public
+server answers 503 to bursts, then refuses connections):
+
+- Photon requests are queued one at a time, about 1 per second.
+- Every request has an 8 s timeout.
+- 429, 5xx and network errors retry twice with backoff.
+- A request that still fails raises `TransientError`. `null` ("not found") is
+  returned only when every source answered with no results.
 
 Rules:
 
@@ -269,6 +291,14 @@ Rules:
   the shipped app. Fakes exist only in tests.
 - Geocoding results are written into `doc.places` (one network hit per name,
   ever). The store deduplicates in-flight lookups per key.
+- **Mentions resolve top-down.** A mention waits until its parent bullet's place
+  is known, so the lookup can be biased to it.
+- **Place status** is `pending`, `missing` (the services answered "no results")
+  or `error` (couldn't reach them). An `error` key is retried after 3 s, 10 s,
+  30 s and 60 s, and again when the device comes back `online`. Its chip shows
+  a dashed outline with ⟳.
+- Formulas wait for a mentioned key's (biased) lookup instead of starting their
+  own.
 - **The focused row is frozen for everyone else.** While a row is being edited,
   the store's `viewDoc` holds that row's text as it was when editing began.
   Contexts, formulas in other rows, views and geocoding all read `viewDoc`, so
@@ -292,8 +322,15 @@ or `/none` and pressing Enter. The command must be its own word
 | View | Shows |
 |---|---|
 | **Map** | One numbered marker per resolved place mention in the node and its subtree, in document order. Markers are joined by a dashed line in visit order, and the map fits its bounds. Clicking a marker focuses its node. |
-| **Calendar** | A Monday-first grid covering only the weeks between the first and last date in the subtree. Each day lists the nodes whose *own* text mentions that date, with the date itself stripped from the label. Clicking an entry focuses the node. |
-| **Table** | One row per direct child: text (rendered, without formulas), place, date, then one column per formula in that row. A light, grid-like lens on the list. |
+| **Calendar** | A Monday-first grid covering only the weeks between the first and last date in the subtree. Each day lists the nodes whose *own* text mentions that date, with the date itself stripped from the label. Clicking an entry focuses the node. In narrow containers (≤ 520 px, via a container query) the grid shrinks to dots and an agenda list (date, then entries) appears below it. |
+| **Table** | One row per direct child: text (rendered, without formulas), place, date, then one column per formula in that row. A light, grid-like lens on the list. In narrow containers the Place column is hidden, since it repeats the chip in the text. |
+
+The **map** has its own stacking context, so Leaflet's panes never draw over the
+sticky header.
+- With no resolved places it hides itself and shows "Finding places…" or "No
+  places to show yet".
+- Unresolved names are listed under it.
+- In dark mode the tiles are darkened with a CSS filter.
 
 **Linked hover (`ui/hover.ts`).** A tiny shared store holding the hovered
 `NodeId`. Hovering a node row highlights its marker and calendar entry. Hovering
@@ -305,6 +342,19 @@ a marker or entry highlights the row.
 
 - **Focused node:** raw text in an auto-growing `<textarea>`, showing the real
   `@`/`{}` source.
+  - **Formatting while typing.** The textarea's text is transparent and sits
+    over a mirror `div` that renders the same characters with mentions, dates
+    and formulas coloured. Both use the read view's font. Highlights change
+    only colour and background, never metrics, so the caret stays aligned.
+  - **Place picker.** While the caret is in an `@word` or `@[words` mention,
+    a list shows:
+    - places already in this document that match (instant and offline)
+    - debounced (250 ms) `search` results from 2 characters up, biased to the
+      bullet's inherited place
+
+    Tap, or `↑`/`↓` then `Enter`/`Tab`, inserts `@Name` (or `@[Name]`) and
+    stores that exact place, so no blind lookup happens. Picking again
+    re-picks. `Escape` closes the list; a second `Escape` leaves the row.
 - **Unfocused node:** `RichText`. Places become chips (dashed while unresolved,
   red if not found), dates become chips, and formulas become result chips. The
   raw formula appears on hover.
@@ -332,7 +382,8 @@ a marker or entry highlights the row.
   - A top-level `ErrorBoundary` offers "Download saved data" and "Reset to
     sample" instead of a blank page.
 - **First launch:** seeds a sample Portugal trip from `model/sample.ts` that
-  exercises every feature.
+  exercises every feature. Its places ship with real coordinates, so it works
+  instantly and offline.
 
 ---
 
@@ -360,7 +411,10 @@ npm run build
   ```
 
   All three must pass.
-- Network APIs are never hit in tests.
+- Network APIs are never hit by `npm test`.
+- `src/services/live.test.ts` runs only with `LIVE_SERVICES=1`, in the
+  `live-check.yml` workflow. It calls the real APIs and logs what they return,
+  and is the first stop when a data feature misbehaves on a device.
 
 ## 9. Conventions
 
@@ -404,7 +458,7 @@ differences live in `src/platform/` and in CSS.
 | Data & network | `localStorage` persists in the WebView. The data APIs are HTTPS with permissive CORS, so they work from Capacitor's `https://localhost` origin unchanged. |
 | Phone toolbar | Soft keyboards have no Tab, and Backspace is unreliable. When a row is focused on a touch device (`pointer: coarse`), a toolbar sits at the bottom of the screen with outdent, indent, move up, move down, collapse and delete bullet, plus the view toggles. Its buttons `preventDefault` on pointer/mouse down so the editor keeps focus and the keyboard stays up. |
 | Export | Blob downloads don't work in a WebView. On native, `src/platform/export.ts` writes `livenotes.json` to the cache directory (`@capacitor/filesystem`) and opens the Android share sheet (`@capacitor/share`). On the web it downloads as before. Import uses `<input type=file>`, which Capacitor supports natively. |
-| Touch UI | On touch-only screens, the row view buttons move into the editing toolbar as 🗺️ 📅 ▦ toggles for the focused row, so rows keep their full width. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
+| Touch UI | On touch-only screens, the row view buttons move into the editing toolbar as 🗺️ 📅 ▦ toggles for the focused row, so rows keep their full width. Below 640 px the header is one row, and Export/Import/Reset sit behind a `⋯` menu. The page is full-bleed. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
 
 **CI workflow:** on every push and on manual dispatch it runs:
 

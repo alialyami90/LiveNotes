@@ -1,4 +1,25 @@
-import type { Doc, OutlineNode, ViewKind } from './types';
+import type { Doc, OutlineNode, Place, ViewKind } from './types';
+
+/**
+ * Real coordinates (from Open-Meteo and Photon) for the sample's mentions, so the
+ * sample works instantly and offline. Anything the user types is looked up live,
+ * and picking a suggestion replaces an entry.
+ */
+const SAMPLE_PLACES: Record<string, Place> = {
+  lisbon: { name: 'Lisbon', lat: 38.7167, lon: -9.1333, label: 'Lisbon, Lisbon District, Portugal' },
+  'praça do comércio': { name: 'Praça do Comércio', lat: 38.7077151, lon: -9.1365238, label: 'Praça do Comércio, Lisboa, Portugal' },
+  'time out market': { name: 'Time Out Market Lisboa', lat: 38.7070934, lon: -9.1458973, label: 'Time Out Market Lisboa, Lisboa, Portugal' },
+  'belém tower': { name: 'Torre de Belém', lat: 38.691586, lon: -9.2159288, label: 'Torre de Belém, Lisboa, Portugal' },
+  'pastéis de belém': { name: 'Pastéis de Belém', lat: 38.6974795, lon: -9.2033202, label: 'Pastéis de Belém, Lisboa, Portugal' },
+  'miradouro da senhora do monte': { name: 'Miradouro da Senhora do Monte', lat: 38.7190781, lon: -9.1329112, label: 'Miradouro da Senhora do Monte, Lisboa, Portugal' },
+  porto: { name: 'Porto', lat: 41.1496, lon: -8.611, label: 'Porto, Porto District, Portugal' },
+  coimbra: { name: 'Coimbra', lat: 40.2111874, lon: -8.4291478, label: 'Coimbra, Portugal' },
+  'vila nova de gaia': { name: 'Vila Nova de Gaia', lat: 41.1239, lon: -8.6118, label: 'Vila Nova de Gaia, Portugal' },
+  'livraria lello': { name: 'Livraria Lello e Irmão', lat: 41.1469, lon: -8.6149, label: 'Livraria Lello e Irmão, Porto, Portugal' },
+  sintra: { name: 'Sintra', lat: 38.8029, lon: -9.3817, label: 'Sintra, Lisbon District, Portugal' },
+  cascais: { name: 'Cascais', lat: 38.6979, lon: -9.4215, label: 'Cascais, Lisbon District, Portugal' },
+  'pinhão': { name: 'Pinhão', lat: 41.1907, lon: -7.5459, label: 'Pinhão, Vila Real District, Portugal' },
+};
 
 type Spec = { text: string; view?: ViewKind; children?: Spec[] };
 
@@ -76,5 +97,5 @@ export function sampleDoc(today = new Date()): Doc {
     return id;
   };
   nodes.root = { id: 'root', text: '', children: spec.map(add) };
-  return { version: 1, rootId: 'root', nodes, places: {} };
+  return { version: 1, rootId: 'root', nodes, places: { ...SAMPLE_PLACES } };
 }

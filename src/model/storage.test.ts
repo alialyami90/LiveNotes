@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadDoc, safeStorage, saveDoc, STORAGE_KEY } from './storage';
 import { sampleDoc } from './sample';
+import { tokenize } from '../syntax/tokenize';
 
 const store = (v: string | null) => ({ getItem: (k: string) => (k === STORAGE_KEY ? v : null) });
 
@@ -50,6 +51,15 @@ describe('storage', () => {
     const texts = (d: Date) => Object.values(sampleDoc(d).nodes).map((n) => n.text).join('\n');
     expect(texts(new Date(2026, 9, 28))).not.toMatch(/\b2026\b/);
     expect(texts(new Date(2026, 11, 29))).toMatch(/Jan 2 2027/);
+  });
+
+  it('sampleDoc ships with every mentioned place already resolved (instant and offline)', () => {
+    const d = sampleDoc();
+    const keys = new Set<string>();
+    for (const n of Object.values(d.nodes)) {
+      for (const seg of tokenize(n.text)) if (seg.kind === 'place') keys.add(seg.key);
+    }
+    for (const key of keys) expect(d.places[key], key).toBeDefined();
   });
 
   it('sampleDoc has a valid tree with nodes reachable from root', () => {

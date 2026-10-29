@@ -125,7 +125,7 @@ describe('store robustness', () => {
     await user.keyboard('{End} @Lisbon');
     await new Promise((r) => setTimeout(r, 20));
     expect(calls).toEqual([]);
-    await user.keyboard('{Escape}');
+    await user.click(document.body); // leave the row
     await waitFor(() => expect(screen.getByText('Lisboa')).toBeInTheDocument());
     expect(calls).toEqual(['lisbon']);
   });
@@ -288,5 +288,84 @@ describe('place lookups', () => {
     );
     expect(await screen.findByText('Lisboa', { selector: '.chip-formula' })).toBeInTheDocument();
     expect(seen).toEqual(['lisbon']);
+  });
+});
+
+describe('place picker', () => {
+  const LISBOA = { name: 'Lisbon', lat: 38.72, lon: -9.14, label: 'Lisbon, Portugal' };
+  const IOWA = { name: 'Lisbon', lat: 41.92, lon: -91.39, label: 'Lisbon, Iowa, United States' };
+
+  function setupPicker(doc: Doc) {
+    const queries: string[] = [];
+    const geocoded: string[] = [];
+    const svc: Services = {
+      ...services,
+      search: async (q) => {
+        queries.push(q);
+        return q.toLowerCase().startsWith('lis') ? [LISBOA, IOWA] : [];
+      },
+      geocode: async (n) => {
+        geocoded.push(n);
+        return null;
+      },
+    };
+    const user = userEvent.setup();
+    const utils = render(
+      <DocProvider initialDoc={doc} services={svc} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    return { user, queries, geocoded, ...utils };
+  }
+
+  it('suggests places while typing an @mention and inserts the picked one', async () => {
+    const { user, geocoded } = setupPicker(build([['a', 'Visit']]));
+    await user.click(screen.getByText('Visit'));
+    await user.keyboard('{End} @lis');
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual(['LisbonLisbon, Portugal', 'LisbonLisbon, Iowa, United States']);
+    await user.click(options[0]);
+    const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(editor).toHaveValue('Visit @Lisbon ');
+    expect(editor).toHaveFocus();
+    expect(editor.selectionStart).toBe(14);
+    expect(screen.queryByRole('listbox')).toBeNull();
+    await user.keyboard('{Escape}');
+    // the picked place is stored, so no blind lookup happens
+    expect(await screen.findByText('Lisbon')).toHaveAttribute('title', 'Lisbon, Portugal');
+    expect(geocoded).toEqual([]);
+  });
+
+  it('arrow keys and Enter pick a suggestion without splitting the bullet', async () => {
+    const { user, container } = setupPicker(build([['a', 'Visit']]));
+    await user.click(screen.getByText('Visit'));
+    await user.keyboard('{End} @lis');
+    await screen.findAllByRole('option');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(screen.getByRole('textbox')).toHaveValue('Visit @Lisbon ');
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(1);
+    await user.keyboard('{Escape}');
+    expect(await screen.findByText('Lisbon')).toHaveAttribute('title', 'Lisbon, Iowa, United States');
+  });
+
+  it('does not search the web for fewer than 2 characters, but offers saved places', async () => {
+    const doc = build([['a', 'Been to @Porto'], ['b', 'Next']]);
+    doc.places.porto = { name: 'Porto', lat: 41.15, lon: -8.61, label: 'Porto, Portugal' };
+    const { user, queries } = setupPicker(doc);
+    await user.click(screen.getByText('Next'));
+    await user.keyboard('{End} @p');
+    const options = await screen.findAllByRole('option');
+    expect(options[0]).toHaveTextContent('Porto');
+    expect(queries).toEqual([]);
+  });
+
+  it('Escape closes the suggestions and keeps editing', async () => {
+    const { user } = setupPicker(build([['a', 'Visit']]));
+    await user.click(screen.getByText('Visit'));
+    await user.keyboard('{End} @lis');
+    await screen.findAllByRole('option');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.getByRole('textbox')).toHaveFocus();
   });
 });

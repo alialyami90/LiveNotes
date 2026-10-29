@@ -261,6 +261,7 @@ li.is-hovered > .row { background: var(--hover); }
 .chip-place.is-missing { background: var(--error-bg); color: var(--error-ink); text-decoration: wavy underline; }
 .chip-date { background: var(--date-bg); color: var(--date-ink); }
 .chip-formula {
+  white-space: nowrap; /* results are short; keep "22° / 14°" together */
   background: var(--formula-bg);
   color: var(--formula-ink);
   font-variant-numeric: tabular-nums;
@@ -439,3 +440,47 @@ body {
 .mobile-toolbar .toolbar-view[aria-pressed='true'] { filter: none; opacity: 1; background: var(--line); }
 .toolbar-sep { flex: none; width: 1px; margin: 6px 2px; background: var(--line); }
 .app:has(.mobile-toolbar) .page { margin-bottom: 96px; }
+
+/* ---------- place picker ---------- */
+
+.picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: var(--font);
+}
+.picker-status { padding: 10px 12px; font-size: 14px; color: var(--ink-soft); }
+.picker-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.picker-option strong { font-weight: 600; font-size: 15px; }
+.picker-option span { font-size: 12.5px; color: var(--ink-soft); }
+.picker-option.is-active { background: var(--place-bg); }
+.picker-option.is-active strong { color: var(--place-ink); }
+.picker-option.is-saved strong::after {
+  content: 'in this doc';
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+@media (pointer: coarse) {
+  .picker-option { padding: 12px 12px; }
+}

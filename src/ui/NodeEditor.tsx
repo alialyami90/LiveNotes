@@ -1,9 +1,12 @@
-import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { Focus, NodeId, ViewKind } from '../model/types';
-import { indent, moveDown, moveUp, outdent, removeOrMerge, setText, setView, splitNode, toggleCollapse } from '../model/ops';
+import { indent, moveDown, moveUp, outdent, removeOrMerge, setPlace, setText, setView, splitNode, toggleCollapse } from '../model/ops';
 import { visibleOrder } from '../model/tree';
 import { useStore } from './store';
-import { tokenize } from '../syntax/tokenize';
+import { placeKey, tokenize } from '../syntax/tokenize';
+import { activeMention, insertMention } from '../syntax/mention';
+import { usePlaceSearch, type Suggestion } from './usePlaceSearch';
+import { PlacePicker } from './PlacePicker';
 
 /** Raw text with tokens coloured; must render character-for-character like the textarea. */
 function Mirror({ text }: { text: string }) {
@@ -27,9 +30,29 @@ function Mirror({ text }: { text: string }) {
 const VIEW_COMMAND = /(?:^|\s+)\/(map|calendar|table|none)$/;
 
 export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
-  const { doc, apply, setFocus } = useStore();
+  const { doc, viewDoc, contexts, apply, setFocus } = useStore();
   const text = doc.nodes[id].text;
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // The @mention under the caret drives the place picker.
+  const [caretPos, setCaretPos] = useState(focus.caret);
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [active, setActive] = useState(0);
+  const mention = activeMention(text, caretPos);
+  const pickerOpen = mention !== null && mention.start !== dismissedAt;
+  const nearKey = contexts.get(id)?.inheritedPlaceKey;
+  const { items, loading } = usePlaceSearch(pickerOpen ? mention.query : null, nearKey ? viewDoc.places[nearKey] : undefined);
+  const showing = pickerOpen && (items.length > 0 || loading);
+  const trackCaret = () => setCaretPos(ref.current?.selectionStart ?? 0);
+
+  const pick = (s: Suggestion) => {
+    if (!mention) return;
+    const next = insertMention(text, mention, s.place.name);
+    const key = placeKey(s.place.name.replace(/[[\]]/g, ''));
+    apply((d) => setPlace(setText(d, id, next.text).doc, key, s.place), { id, caret: next.caret });
+    setCaretPos(next.caret);
+    setActive(0);
+  };
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -61,6 +84,23 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     const collapsed = el.selectionStart === el.selectionEnd;
+    if (showing && mention) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (items.length) setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && items[active]) {
+        e.preventDefault();
+        pick(items[active]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedAt(mention.start);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       const cmd = text.match(VIEW_COMMAND);
@@ -104,10 +144,16 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         rows={1}
         value={text}
         spellCheck={false}
-        onChange={(e) => apply((d) => setText(d, id, e.target.value))}
+        onChange={(e) => {
+          apply((d) => setText(d, id, e.target.value));
+          setCaretPos(e.target.selectionStart);
+          setActive(0);
+        }}
+        onSelect={trackCaret}
         onKeyDown={onKeyDown}
         onBlur={() => setFocus((f) => (f?.id === id ? null : f))}
       />
+      {showing && <PlacePicker items={items} active={Math.min(active, Math.max(items.length - 1, 0))} loading={loading} onPick={pick} onHover={setActive} />}
     </div>
   );
 }
