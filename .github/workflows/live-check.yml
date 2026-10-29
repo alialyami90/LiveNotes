@@ -1,0 +1,22 @@
+name: Live API check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/services/**'
+      - '.github/workflows/live-check.yml'
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/services/live.test.ts --reporter=verbose
+        env:
+          LIVE_SERVICES: '1'
