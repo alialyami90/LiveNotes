@@ -66,6 +66,10 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: open-meteo geocoding and pace
 describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices', () => {
   const s = httpServices();
   it('geocode picks the right Lisbon and finds a landmark near it', async () => {
+    // Diagnostic: since the kinds change, geocode('lisbon') has come back as Photon's Lisbon
+    // district (38.995) instead of Open-Meteo's city (38.725). Log the app's exact request.
+    const raw = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=lisbon&count=1&language=en&format=json');
+    console.log('[om-app lisbon]', raw.status, (await raw.text()).slice(0, 400));
     const lisbon = await s.geocode('lisbon');
     console.log('[app] lisbon', JSON.stringify(lisbon));
     expect(lisbon?.label).toContain('Portugal');

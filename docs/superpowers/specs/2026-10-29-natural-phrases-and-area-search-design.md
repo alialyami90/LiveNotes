@@ -275,10 +275,12 @@ Rules:
 The parent place is the bullet's inherited place (the existing
 `inheritedPlaceKey`, unchanged).
 
-- If the parent has an `extent`, use it.
-- Otherwise use a box reaching 30 km from it in each direction.
-- An extent larger than about 400 km across (a country or region) is used as
-  is. Photon handles large boxes.
+- Use a box reaching 30 km from it in each direction, grown to cover the
+  parent's `extent` when it has one. An extent never shrinks the area: a city's
+  extent is its municipal boundary, which often leaves out its airport (the live
+  check found Barcelona's ends just north of El Prat).
+- An extent larger than the box (a country or region) is therefore used as is.
+  Photon handles large boxes.
 - A `region` parent with no valid extent (a country geocoded by Open-Meteo) has
   no area: a 30 km box around a country's centre means nothing. Search and
   geocode then skip the area stages and the section split, and behave as the

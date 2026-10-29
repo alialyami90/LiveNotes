@@ -400,8 +400,28 @@ describe('httpServices weather and routes', () => {
 describe('the area around a parent place (areaOf, inArea)', () => {
   const BCN: Place = { name: 'Barcelona', lat: 41.3874, lon: 2.1686 };
 
-  it('uses a valid extent as is', () => {
-    expect(areaOf({ ...BCN, extent: [2.05, 41.32, 2.23, 41.47] })).toEqual([2.05, 41.32, 2.23, 41.47]);
+  it('uses a valid extent that is larger than the 30 km box as is', () => {
+    const catalonia: Box = [0.15, 40.52, 3.33, 42.86];
+    expect(areaOf({ ...BCN, extent: catalonia })).toEqual(catalonia);
+  });
+
+  // A city's extent is its municipal boundary, which often leaves out its airport and
+  // suburbs: live Photon gives Barcelona [2.0525, 41.3170, 2.2284, 41.4679], and El Prat
+  // (41.2969, 2.0790) lies just south of it. So the area is never smaller than the box.
+  it('widens a small extent to at least the 30 km box, so a city keeps its airport', () => {
+    const municipal: Box = [2.0525, 41.317, 2.2284, 41.4679];
+    const area = areaOf({ ...BCN, extent: municipal });
+    expect(inArea({ lat: 41.2969, lon: 2.079 }, area)).toBe(true);
+    expectFallback(area);
+  });
+
+  it('keeps the part of an extent that reaches past the box', () => {
+    const long: Box = [2.0, 41.2, 2.3, 42.5]; // further north than 30 km, inside it to the south
+    const [w, s, e, n] = areaOf({ ...BCN, extent: long });
+    expect(n).toBe(42.5);
+    expect(s).toBeCloseTo(BCN.lat - 0.27, 2);
+    expect(w).toBeLessThan(2.0);
+    expect(e).toBeGreaterThan(2.3);
   });
 
   const expectFallback = (box: Box) => {
@@ -486,16 +506,17 @@ describe('searching inside the parent place first (spec §6)', () => {
   it("asks Photon for the parent place's extent as bbox=west,south,east,north", async () => {
     const f = fakeFetch([{ match: OM, respond: () => ({ body: {} }) }, { match: PHOTON, respond: () => photon() }]);
     const s = httpServices(f.fn, noSleep);
-    await s.search('x', { ...BARCELONA, extent: [2.05, 41.32, 2.23, 41.47] });
+    // An extent larger than the 30 km box goes to Photon as it is.
+    await s.search('x', { ...BARCELONA, extent: [0.15, 40.52, 3.33, 42.86] });
     const searchBbox = f.urls.filter((u) => BBOX.test(u));
     expect(searchBbox).toHaveLength(1);
-    expect(searchBbox[0]).toContain('bbox=2.05,41.32,2.23,41.47');
+    expect(searchBbox[0]).toContain('bbox=0.15,40.52,3.33,42.86');
     expect(searchBbox[0]).toContain('limit=8');
     f.urls.length = 0;
-    await s.geocode('x', { ...BARCELONA, extent: [2.05, 41.32, 2.23, 41.47] });
+    await s.geocode('x', { ...BARCELONA, extent: [0.15, 40.52, 3.33, 42.86] });
     const geocodeBbox = f.urls.filter((u) => BBOX.test(u));
     expect(geocodeBbox).toHaveLength(1);
-    expect(geocodeBbox[0]).toContain('bbox=2.05,41.32,2.23,41.47');
+    expect(geocodeBbox[0]).toContain('bbox=0.15,40.52,3.33,42.86');
     expect(geocodeBbox[0]).toContain('limit=5');
   });
 

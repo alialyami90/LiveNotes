@@ -180,7 +180,7 @@ interface Doc {
 - `kind` and `extent` are optional, so `version` stays 1. Places saved before
   they existed show 📍. Nothing is looked up just to fill them in; re-picking a
   place updates it. An unknown `kind` from an imported file shows 📍, and a
-  malformed `extent` falls back to the 30 km box (§5).
+  malformed `extent` is ignored, leaving the 30 km box (§5).
 
 ### 3.2 Inline syntax (`syntax/tokenize.ts`)
 
@@ -389,9 +389,11 @@ interface SearchOptions { signal?: AbortSignal; onUpdate?: (found: Found[]) => v
 | Map tiles | `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, with OSM attribution shown |
 
 **The parent's area** (`geo.ts` `areaOf`, `searchArea`). The parent place is
-the bullet's inherited place. Its area is its `extent` when that is a valid box,
-else a box reaching 30 km from it in each direction. A large extent (a country)
-is used as is. A `region` parent with no valid extent (a country geocoded by
+the bullet's inherited place. Its area is a box reaching 30 km from it in each
+direction, grown to cover its `extent` when that is a valid box. An extent never
+shrinks the area: a city's extent is its municipal boundary, which often leaves
+out its airport (live Photon's Barcelona ends just north of El Prat). A large
+extent (a country) is used as is. A `region` parent with no valid extent (a country geocoded by
 Open-Meteo) has **no** area: search and geocode skip the area stages and the
 section split, and behave as the plain biased search.
 
@@ -634,8 +636,8 @@ a marker or entry highlights the row.
   feature, and its places ship with real coordinates, so it works instantly
   and offline. It uses both forms: phrases (`— drive from @Lisbon to @Porto`,
   `Porto weather`) and formulas (`{weather()}`, `{route(prev, here)}`,
-  `{distance(…)}`), with no fact shown twice. Its places have no `kind`, so
-  they show 📍.
+  `{distance(…)}`), with no fact shown twice. Its places carry a `kind`, so
+  their chips show icons.
 
 ---
 

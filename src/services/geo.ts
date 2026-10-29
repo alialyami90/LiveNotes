@@ -27,15 +27,19 @@ const isBox = (e: unknown): e is Box =>
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 /**
- * The area a bullet's children are searched in: the place's own extent, or a box around it.
- * Imported documents can hold any `extent`, so a malformed one falls back to the box.
+ * The area a bullet's children are searched in: a box reaching 30 km around the place, grown to
+ * cover its own extent. A city's extent is its municipal boundary, which often leaves out its
+ * airport and suburbs (Barcelona's excludes El Prat), so an extent never shrinks the area.
+ * Imported documents can hold any `extent`, so a malformed one is ignored.
  */
 export function areaOf(p: Place): Box {
-  if (isBox(p.extent)) return [...p.extent];
   const dLat = (AREA_KM * 1000) / (EARTH_RADIUS_M * rad(1));
   // Near the poles a degree of longitude shrinks to nothing; the clamp keeps the box finite.
   const dLon = dLat / Math.max(Math.cos(rad(p.lat)), 0.01);
-  return [clamp(p.lon - dLon, -180, 180), clamp(p.lat - dLat, -90, 90), clamp(p.lon + dLon, -180, 180), clamp(p.lat + dLat, -90, 90)];
+  const box: Box = [clamp(p.lon - dLon, -180, 180), clamp(p.lat - dLat, -90, 90), clamp(p.lon + dLon, -180, 180), clamp(p.lat + dLat, -90, 90)];
+  if (!isBox(p.extent)) return box;
+  const [w, s, e, n] = p.extent;
+  return [Math.min(w, box[0]), Math.min(s, box[1]), Math.max(e, box[2]), Math.max(n, box[3])];
 }
 
 /**

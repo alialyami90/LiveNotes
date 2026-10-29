@@ -5,15 +5,18 @@ the way of working that kept quality high so far. `CLAUDE.md` is the
 engineering spec and working agreement; this file is the "where we are and how
 we work" layer on top of it.
 
-Last updated: 2026-10-29, written for the state once the final whole-branch
-review's fix wave of the natural-phrases work is done (in its worktree, before
-integration onto branch `ccr-0140cca5-y52lpq`).
+Last updated: 2026-10-29. The natural-phrases work is finished, reviewed,
+integrated and pushed on branch `ccr-0140cca5-y52lpq`, plus one fix from the
+live check (a city's extent no longer shrinks its area, §1).
 
-**Not done yet:**
+**Open:**
 
-- the scoped re-review of the final fix wave, and its integration and push
-- a CI run (Android APK and `live-check.yml`) on the pushed branch: not yet
-  confirmed green
+- `geocode('lisbon')` from CI returns Photon's Lisbon *district* (38.995,
+  kind `region`) instead of Open-Meteo's city (38.725). It started with the
+  kinds commit, but that commit only parses, so the cause is probably Open-Meteo
+  answering the app's `count=1` request differently. The live check now logs
+  that raw request (`[om-app lisbon]`): read it on the next run and fix from
+  there.
 
 ---
 
@@ -49,11 +52,16 @@ https://github.com/alialyami90/LiveNotes/releases/download/android-latest/liveno
 Spec (approved by the owner):
 `docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`.
 Plan: `docs/superpowers/plans/2026-10-29-natural-phrases-and-area-search.md`.
-Ledger: `.superpowers/sdd/2026-10-29-natural-phrases-and-area-search/progress.md`.
 All 8 tasks are implemented and passed their per-task reviews (Tasks 1, 4, 6, 7
-and 8 after one fix round). The final whole-branch review ran; its fix wave
-(brief and report: `final-fix-brief.md` and `final-fix-report.md` in the ledger
-folder) is applied. Its scoped re-review has not run yet.
+and 8 after one fix round). The final whole-branch review ran, its fix wave is
+applied, and the scoped re-review found every finding addressed. The ledger
+folder was removed at the end; git history and this file are the record.
+
+**After the push, the live check found:** Photon gives a city its municipal
+boundary as `extent`, and Barcelona's ends just north of El Prat. With the
+extent used as the area, "@airport" under a Photon-resolved Barcelona listed El
+Prat under Elsewhere. `areaOf` now grows the 30 km box to cover the extent
+instead of replacing it (CLAUDE.md §5).
 
 What shipped (CLAUDE.md §3.2, §4.3, §5, §6, §7 describe it):
 
@@ -92,30 +100,27 @@ What shipped (CLAUDE.md §3.2, §4.3, §5, §6, §7 describe it):
   stubs model Photon's `bbox`, `osm_key`/`osm_value`/`extent` and Open-Meteo's
   population and feature codes.
 
-Local verification at the end of the final fix wave (its worktree, before
-integration):
+Verification on the branch:
 
 - typecheck clean
-- **746** unit/UI tests pass (12 live tests skipped); the test output is
-  clean (the jsdom alert() line is gone)
+- **749** unit/UI tests pass (12 live tests skipped); the test output is
+  clean
 - build OK
 - the browser check passes **80/80** on desktop and Pixel 7, light and dark
-- the live checks have never run against the real APIs; their first run is
-  the CI run on the pushed branch
+- the Android APK workflow is green; `live-check.yml` went red once on the
+  extent finding above, which the area fix addresses
 
 ### Next steps, in order
 
-1. **Confirm CI on the pushed branch:** the Android APK workflow and
-   `live-check.yml` (its new cases: an airport among the inside rows near
-   Barcelona, a cafe near Lisbon, Photon's extent order). Read the live-check
-   logs: they print the rows Photon returned.
-2. **Scoped re-review of the final fix wave** (the final whole-branch review
-   and its fix wave are done). Deferred to a later wave: combobox ARIA wiring
-   on the textarea, PPLX → neighbourhood, the ±180° wrap, the test-strength
-   items, `keepEditorFocus` dedupe, and `travel()` mode case sensitivity.
-3. Run the gate and the browser check again, push, and confirm CI again.
-4. Raise the open owner items in §5.
-5. `superpowers:finishing-a-development-branch`.
+1. Confirm `live-check.yml` is green after the area fix, and read
+   `[om-app lisbon]` in its log to settle the Lisbon item above.
+2. Raise the open owner items in §5.
+3. Deferred to a later wave: combobox ARIA wiring on the textarea, PPLX →
+   neighbourhood, the ±180° wrap, the test-strength items, `keepEditorFocus`
+   dedupe, `travel()` mode case sensitivity, the popup opening in a bullet
+   that already has a `{route()}` formula, and the rare stored namesake after
+   an area-stage outage (an Open-Meteo town within 75 km should skip the area
+   stage).
 
 ---
 
