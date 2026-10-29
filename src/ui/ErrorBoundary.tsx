@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
       <div className="crash">
         <h1>Something went wrong</h1>
         <p>{this.state.error.message}</p>
-        <div className="actions">
+        <div className="crash-actions">
           <button type="button" onClick={this.download}>
             Download saved data
           </button>

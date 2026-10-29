@@ -68,6 +68,19 @@
 .crash { max-width: 560px; margin: 80px auto; padding: var(--sp-5); }
 .crash h1 { font-family: var(--font-display); font-size: var(--fs-title); line-height: var(--lh-title); margin: 0 0 var(--sp-2); }
 .crash p { color: var(--ink-soft); font-family: var(--mono); font-size: var(--fs-meta); }
+/* Its own class: the header's phone rules hide .actions behind the ⋯ menu, which would hide these recovery buttons. */
+.crash-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+.crash-actions button {
+  min-height: 44px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius);
+  font-size: var(--fs-body);
+  font-weight: 550;
+  cursor: pointer;
+}
+.crash-actions button:hover { border-color: var(--ink-soft); }
 
 @media (max-width: 640px) {
   .topbar { position: sticky; padding: 10px var(--sp-4) var(--sp-2); }
