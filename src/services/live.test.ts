@@ -26,7 +26,42 @@ async function probe(q: string) {
   }
 }
 
-describe.skipIf(!process.env.LIVE_SERVICES)('live services', () => {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function show(label: string, url: string) {
+  const t = Date.now();
+  try {
+    const res = await fetch(url, { headers: { Referer: 'https://localhost/' } });
+    const text = await res.text();
+    let out = text.slice(0, 200);
+    try {
+      const j = JSON.parse(text);
+      if (j.results) out = j.results.slice(0, 3).map((r: Record<string, unknown>) => `${r.name}/${r.admin1}/${r.country} pop=${r.population}`).join(' ; ') || '0 results';
+      if (j.features) out = j.features.slice(0, 3).map((f: { properties: Record<string, string> }) => `${f.properties.name}/${f.properties.city ?? ''}/${f.properties.country}`).join(' ; ') || '0 features';
+    } catch { /* not JSON */ }
+    console.log(`[${label}] ${res.status} ${Date.now() - t}ms ${out}`);
+  } catch (e) {
+    console.log(`[${label}] ERR ${(e as Error).message}`);
+  }
+}
+
+describe.skipIf(!process.env.LIVE_SERVICES)('live: open-meteo geocoding and paced photon', () => {
+  it('open-meteo geocoding ranks by population', async () => {
+    for (const q of ['lisbon', 'porto', 'dammam', 'khobar', 'sintra', 'time out market', 'belém tower', 'ribeira']) {
+      await show(`om ${q}`, `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=3&language=en&format=json`);
+    }
+  }, 60_000);
+
+  it('photon paced at 1 request/second, english, biased', async () => {
+    for (const q of ['lisbon', 'dammam', 'time out market', 'ribeira', 'livraria lello', 'vila nova de gaia']) {
+      await show(`photon-en ${q}`, `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=3&lang=en`);
+      await sleep(1000);
+    }
+    await show('photon-bias ribeira@porto', `https://photon.komoot.io/api/?q=ribeira&limit=3&lang=en&lat=41.15&lon=-8.61`);
+  }, 90_000);
+});
+
+describe.skipIf(!process.env.LIVE_SERVICES || !!process.env.SKIP_BURST)('live services', () => {
   it('photon: sequential', async () => {
     for (const q of NAMES) console.log('[seq]', await probe(q));
   }, 120_000);
