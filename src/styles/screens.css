@@ -1,0 +1,126 @@
+/* Screen-level pieces the home, archive and note screens apply: section heads, the
+   timeline's date stamps on the orange rail, and the screen entry motion. DESIGN.md
+   documents the markup each one expects. */
+
+/* ---------- section head ---------- */
+
+/* Fraunces small caps: a quiet, bookish label that is still clearly a heading.
+   Title size because all-small-caps renders at roughly x-height, about 15 px here. */
+.section-head {
+  margin: var(--sp-6) 0 var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  font-weight: 600;
+  font-variant-caps: all-small-caps;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+.section-head:first-child { margin-top: 0; }
+
+/* ---------- date stamp ---------- */
+
+/* Weekday (or month) in micro caps over a large day number. Tabular lining numerals so
+   "11" and "18" stack to the same width down the rail. The --bg ground knocks the rail
+   line out behind the stamp, so the stamp reads as sitting on the rail. */
+.stamp {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 48px;
+  padding: var(--sp-1) 0 var(--sp-2);
+  background: var(--rail-ground, var(--bg)); /* set --rail-ground if the rail sits on --paper */
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--ink);
+  text-align: center;
+}
+.stamp__dow {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  font-weight: 650;
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.stamp__day {
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+/* Today: the number takes the accent. Large text, so 3:1 is the floor (4.75:1 light, 8.06:1 dark). */
+.stamp.is-today .stamp__day { color: var(--accent); }
+
+/* ---------- the rail ---------- */
+
+/* An ordered list of dates. Each item puts a stamp in the left column and its cards on
+   the right; one continuous 2 px orange line runs down the stamp column and ends in a
+   small ring, the same end mark as the route sketch, so a short rail reads as finished. */
+.rail {
+  --rail-col: 56px;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* an auto track would grow to fit a nowrap places line */
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rail::before {
+  content: '';
+  position: absolute;
+  top: var(--sp-3);
+  bottom: 7px;
+  left: calc(var(--rail-col) / 2 - 1px);
+  width: 2px;
+  background: var(--accent);
+}
+.rail::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--rail-col) / 2 - 4px);
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--rail-ground, var(--bg));
+}
+.rail__item {
+  display: grid;
+  grid-template-columns: var(--rail-col) minmax(0, 1fr);
+  column-gap: var(--sp-3);
+  align-items: start;
+}
+.rail__item > .stamp { position: relative; justify-self: center; }
+.rail__cards { display: grid; gap: var(--sp-2); min-width: 0; }
+
+/* Same breakpoint as the shrunken route sketch in home.css: phones up to 440 px. */
+@media (max-width: 440px) {
+  .rail { --rail-col: 48px; }
+  .rail__item { column-gap: var(--sp-2); }
+}
+
+/* ---------- screen entry ---------- */
+
+/* Home <-> note: a calm 160 ms fade and 8 px rise. It moves `top` on a relative box rather
+   than `transform`, because a transformed ancestor becomes the containing block for
+   position: fixed children, and the FAB, toolbar and undo bar would jump for 160 ms. */
+[data-screen] {
+  position: relative;
+  animation: screen-in var(--dur-screen) var(--ease-out) backwards;
+}
+/* Both ends explicit: `top: auto` is not interpolable, so an implicit end would snap. */
+@keyframes screen-in {
+  from { opacity: 0; top: 8px; }
+  to { opacity: 1; top: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-screen] { animation: none; }
+  .node-menu,
+  .actions button,
+  .map-marker { transition: none; }
+}

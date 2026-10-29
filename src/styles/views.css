@@ -1,0 +1,139 @@
+/* Views: map, calendar and table lenses rendered under a node. */
+
+.view {
+  container-type: inline-size;
+  margin: 6px 0 10px var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+.view-empty { padding: 14px var(--sp-4); font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--ink-soft); }
+
+.map { height: 320px; isolation: isolate; z-index: 0; }
+.map.is-empty { display: none; }
+.view-note {
+  padding: var(--sp-2) 14px;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  color: var(--error-ink);
+  border-top: 1px solid var(--line);
+}
+.map-marker {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 650 12px var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  transition: transform var(--dur-fast);
+}
+/* Fixed blue (the light place ink) in both themes: the marker sits on map tiles, not on paper. */
+.map-marker.is-hovered { transform: scale(1.35); background: #1d4f86; color: #fff; }
+
+.calendar { padding: 14px; }
+/* The month label is a section head inside the lens. */
+.calendar h4 {
+  margin: 0 0 var(--sp-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-title); /* small caps heads are always title size; see .section-head */
+  line-height: var(--lh-title);
+  font-weight: 600;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dow {
+  padding-bottom: 2px;
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  font-weight: 600;
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--ink-soft);
+}
+.day {
+  min-height: 54px;
+  padding: 3px var(--sp-1);
+  border-radius: var(--r-chip);
+  background: var(--paper);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+/* Days outside the range drop their paper, not their contrast. */
+.day.is-outside { background: transparent; }
+.day-num { color: var(--ink-soft); }
+.day.has-entries .day-num { color: var(--date-ink); font-weight: 650; }
+.entry {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 1px var(--sp-1);
+  border: 0;
+  border-radius: 4px;
+  background: var(--date-bg);
+  color: var(--date-ink);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.entry.is-hovered { outline: 2px solid var(--date-ink); }
+
+.table-view { overflow-x: auto; }
+.table-view table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+.table-view th, .table-view td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.table-view th {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  font-weight: 600;
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--paper);
+}
+.table-view tr.is-hovered td { background: var(--hover); }
+.table-view .rich { line-height: 22px; min-height: 0; cursor: default; }
+
+.agenda { list-style: none; margin: var(--sp-3) 0 0; padding: 0; }
+.agenda li { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.day .dot { display: inline-block; width: 8px; height: 8px; margin: 2px 2px 0 0; border-radius: 50%; background: var(--date-ink); }
+.agenda-date {
+  flex: none;
+  width: 92px;
+  padding-top: 2px;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--date-ink);
+}
+.agenda-entries { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.agenda .entry { font-size: var(--fs-meta); line-height: var(--lh-meta); padding: 3px var(--sp-2); white-space: normal; }
+
+/* Keep in sync with NARROW_PX in CalendarView.tsx. */
+@container (max-width: 520px) {
+  .day { min-height: 34px; }
+  .col-place { display: none; }
+  .table-view th, .table-view td { padding: 6px var(--sp-2); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
+}
+
+@media (max-width: 640px) {
+  .view { margin-left: 0; }
+}

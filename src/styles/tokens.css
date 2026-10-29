@@ -1,0 +1,81 @@
+/* Design tokens. DESIGN.md is the narrative for these; contrast ratios are listed there.
+   Colours are the kept LiveNotes world (warm paper, orange accent, blue/purple/green chips);
+   only type, spacing, radius, shadow and motion are new. */
+:root {
+  /* ---- colour: light ---- */
+  --bg: #f7f5f0;
+  --paper: #fffdf9;
+  --ink: #23211c;
+  --ink-soft: #6b665c;
+  --line: #e6e1d6;
+  --accent: #c2410c;
+  --place-bg: #e8f1fb;
+  --place-ink: #1d4f86;
+  --date-bg: #f3eafc;
+  --date-ink: #6233a0;
+  --formula-bg: #e9f6ee;
+  --formula-ink: #1f6b3e;
+  --error-bg: #fdecea;
+  --error-ink: #b42318;
+  --hover: #fff3d6;
+  --on-accent: #ffffff; /* text on an --accent fill (map marker numbers) */
+  --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
+
+  /* ---- type ---- */
+  --font-display: 'Fraunces Variable', Georgia, serif;
+  --font-ui: 'Instrument Sans Variable', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* size / line-height pairs. rem so Android's font-size setting scales size and leading together. */
+  --fs-display: 2rem;      --lh-display: 2.25rem;   /* 32/36 note title, stamp day */
+  --fs-title: 1.375rem;    --lh-title: 1.75rem;     /* 22/28 card title, section head */
+  --fs-body: 1rem;         --lh-body: 1.625rem;     /* 16/26 outline text, UI */
+  --fs-meta: 0.8125rem;    --lh-meta: 1.125rem;     /* 13/18 dates, hints, captions */
+  --fs-micro: 0.6875rem;   --lh-micro: 0.875rem;    /* 11/14 caps labels, stamp weekday */
+  --track-micro: 0.08em;   /* caps at 11px need air to stay legible */
+
+  /* ---- space, shape, depth ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --r-card: 14px;
+  --r-chip: 6px;
+  --radius: 10px; /* menus, popovers, views: inner surfaces sit a step tighter than cards */
+  /* Warm-tinted, offset and soft: a contact edge plus an ambient lift, never a halo. */
+  --shadow-card: 0 1px 2px rgb(70 45 20 / 0.06), 0 6px 18px -6px rgb(70 45 20 / 0.14);
+  --shadow: 0 1px 2px rgb(70 45 20 / 0.05), 0 10px 28px -6px rgb(70 45 20 / 0.16); /* floating layers */
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-screen: 160ms;
+  --dur-bar: 220ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161513;
+    --paper: #1e1d1a;
+    --ink: #ece8df;
+    --ink-soft: #a29c90;
+    --line: #34312b;
+    --accent: #fb923c;
+    --place-bg: #1b2b3f;
+    --place-ink: #9cc7f5;
+    --date-bg: #2b2140;
+    --date-ink: #c9a8f5;
+    --formula-bg: #183324;
+    --formula-ink: #8ddcac;
+    --error-bg: #3a1a17;
+    --error-ink: #f8a39a;
+    --hover: #3a3320;
+    --on-accent: #161513; /* the dark accent is light: white on it is only 2.3:1 */
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 8px 22px -6px rgb(0 0 0 / 0.5);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 12px 30px -6px rgb(0 0 0 / 0.55);
+    color-scheme: dark;
+  }
+}

@@ -1,12 +1,12 @@
-/* Note chrome. Task 7 supplies --font-display (Fraunces); until then Georgia stands in. */
+/* Note chrome. The title is the one display-size line in the app: Fraunces at 32/36. */
 .title-field {
   display: block;
   width: 100%;
-  margin: 0 0 8px;
+  margin: 0 0 var(--sp-2);
   /* 44px is the touch-target floor; padding (not a fixed height) keeps auto-grow honest.
-     2rem * 1.2 line = 38.4px of text + 2 * 3px padding = 44.4px for one line. */
+     --lh-display (36px) + 2 * 4px padding = 44px for one line. */
   min-height: 44px;
-  padding: 3px 0;
+  padding: var(--sp-1) 0;
   box-sizing: border-box;
   border: 0;
   outline: none;
@@ -16,12 +16,13 @@
   color: var(--ink);
   caret-color: var(--accent);
   font-family: var(--font-display, Georgia, serif);
-  font-size: 2rem;
+  font-size: var(--fs-display, 2rem);
   font-weight: 600;
-  line-height: 1.2;
+  line-height: var(--lh-display, 2.25rem);
   letter-spacing: -0.01em;
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
-.title-field::placeholder { color: var(--ink-soft); opacity: 0.6; }
-.title-field::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+/* Full --ink-soft, no opacity: at 0.6 the placeholder fell to 2.5:1, under even the 3:1 large-text floor. */
+.title-field::placeholder { color: var(--ink-soft); opacity: 1; }
+.title-field::selection { background: var(--accent-wash); }

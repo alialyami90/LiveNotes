@@ -1,4 +1,4 @@
-/* Home components. Colours come from the tokens in styles.css; fonts and the type scale come later. */
+/* Home components. Every value comes from the tokens in src/styles/tokens.css (see DESIGN.md). */
 
 /* ---------- route sketch ---------- */
 
@@ -23,16 +23,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-3);
   min-height: 72px;
-  padding: 14px 56px 14px 16px; /* right padding keeps text clear of the menu button */
+  padding: 14px 56px 14px var(--sp-4); /* right padding keeps text clear of the menu button */
   color: inherit;
   text-decoration: none;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  transition: border-color 0.15s ease;
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--dur-fast) ease;
 }
 .note-card:hover { border-color: var(--accent); }
 .note-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -40,9 +40,11 @@
 .note-card__body { min-width: 0; flex: 1; }
 .note-card__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  line-height: 1.3;
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  font-weight: 600;
+  letter-spacing: -0.005em;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -53,11 +55,12 @@
 .note-card__places,
 .note-card__preview {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--ink-soft);
 }
-.note-card__meta { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.note-card__range { color: var(--ink); font-weight: 550; }
+.note-card__meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) 10px; margin-top: var(--sp-1); font-variant-numeric: tabular-nums; }
+.note-card__range { color: var(--ink); font-weight: 600; }
 .note-card__range--quiet { color: var(--ink-soft); font-weight: 400; }
 .note-card__relative { color: var(--accent); font-weight: 600; }
 .note-card__places { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -71,9 +74,9 @@
 
 .note-card__menu { position: absolute; top: 6px; right: 6px; }
 
-/* Phones are 360-412 px wide: shrink the sketch (the viewBox scales it) instead of dropping it.
-   At 360 px the card is ~328 px, so the body keeps ~170 px beside a 72 px sketch. */
-@media (max-width: 400px) {
+/* Phones are 360-440 px wide: shrink the sketch (the viewBox scales it) instead of dropping it,
+   so a 22 px Fraunces title keeps room beside it, even inside the timeline rail. */
+@media (max-width: 440px) {
   .note-card { gap: 10px; padding-left: 14px; }
   .note-card__sketch .route-sketch { width: 72px; height: 48px; }
 }
@@ -130,13 +133,16 @@
 
 /* ---------- pinned row ---------- */
 
-.pinned-row { margin: 0 0 20px; }
+.pinned-row { margin: 0 0 var(--sp-5); }
+/* "Pinned" is a section head: same face and caps as .section-head in styles/screens.css. */
 .pinned-row__label {
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0 0 var(--sp-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.06em;
   color: var(--ink-soft);
 }
 .pinned-row__list {
@@ -145,9 +151,9 @@
   grid-auto-flow: column;
   grid-auto-columns: max-content;
   grid-template-rows: repeat(2, auto);
-  gap: 8px;
+  gap: var(--sp-2);
   margin: 0;
-  padding: 4px; /* room for the focus rings, which overflow-hidden would clip */
+  padding: var(--sp-1); /* room for the focus rings, which overflow-hidden would clip */
   overflow-x: auto;
   overflow-y: hidden;
   list-style: none;
@@ -156,7 +162,7 @@
 .pinned-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
   max-width: min(240px, 80vw);
   min-height: 44px;
@@ -166,6 +172,8 @@
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 999px;
+  box-shadow: 0 1px 2px rgb(70 45 20 / 0.05);
+  transition: border-color var(--dur-fast) ease;
 }
 .pinned-chip:hover { border-color: var(--accent); }
 .pinned-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -176,18 +184,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.pinned-chip__date { flex: none; font-size: 13px; color: var(--ink-soft); }
+.pinned-chip__date { flex: none; font-size: var(--fs-meta); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 
 /* ---------- undo bar ---------- */
 
 .undo-bar {
   position: fixed;
   left: 50%;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
   z-index: 1100;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--sp-4);
+  /* max-content: left: 50% leaves only half the viewport for shrink-to-fit, which wrapped
+     "Note deleted" onto two lines on a 412 px phone. */
+  width: max-content;
   max-width: calc(100vw - 32px);
   padding: 4px 4px 4px 18px;
   color: var(--bg);
@@ -195,7 +206,7 @@
   border-radius: 999px;
   box-shadow: var(--shadow);
   transform: translateX(-50%);
-  animation: undo-bar-in 0.2s ease;
+  animation: undo-bar-in var(--dur-bar) var(--ease-out);
 }
 .undo-bar__undo {
   min-width: 44px;
@@ -214,11 +225,13 @@
 .undo-bar__undo:hover { background: color-mix(in srgb, var(--bg) 12%, transparent); }
 .undo-bar__undo:focus-visible { outline: 2px solid var(--bg); outline-offset: -4px; }
 
+/* Slides up from just below its resting place; it arrives, it doesn't bounce. */
 @keyframes undo-bar-in {
-  from { opacity: 0; transform: translate(-50%, 8px); }
+  from { opacity: 0; transform: translate(-50%, 24px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .note-card { transition: none; }
+  .note-card,
+  .pinned-chip { transition: none; }
   .undo-bar { animation: none; }
 }

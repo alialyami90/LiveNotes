@@ -1,0 +1,57 @@
+/* Mention and formula chips (read mode). Blue places, purple dates, green results.
+   Status is carried by outline style, never by fading: an opacity-faded chip falls
+   under 4.5:1 (a pending place at 0.6 measured 2.9:1 in light). */
+
+.chip {
+  padding: 1px 5px;
+  margin: 0 1px;
+  border-radius: var(--r-chip);
+  font-size: 0.94em;
+  /* long chips wrap like text instead of jumping to their own line */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.chip-wrap { position: relative; display: inline; }
+.chip-formula.is-error { cursor: pointer; }
+.chip-popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1200;
+  width: max-content;
+  max-width: min(22em, 80vw);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--error-ink);
+  background: var(--error-bg);
+  color: var(--error-ink);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  white-space: normal;
+  box-shadow: var(--shadow);
+}
+.chip-formula.is-error {
+  display: inline-block;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  line-height: 22px;
+}
+.chip-place { background: var(--place-bg); color: var(--place-ink); }
+.chip-place::before { content: '📍'; font-size: 0.8em; margin-right: 3px; }
+.chip-place.is-pending { outline: 1px dashed currentColor; outline-offset: -1px; }
+.chip-place.is-error { outline: 1px dashed var(--error-ink); outline-offset: -1px; }
+.chip-place.is-error::after { content: ' ⟳'; font-size: 0.85em; }
+.chip-place.is-missing { background: var(--error-bg); color: var(--error-ink); text-decoration: wavy underline; }
+.chip-date { background: var(--date-bg); color: var(--date-ink); font-variant-numeric: tabular-nums; }
+.chip-formula {
+  white-space: nowrap; /* results are short; keep "22° / 14°" together */
+  background: var(--formula-bg);
+  color: var(--formula-ink);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+.chip-formula.is-pending { border-style: dashed; border-color: currentColor; }
+.chip-formula.is-error { background: var(--error-bg); color: var(--error-ink); }

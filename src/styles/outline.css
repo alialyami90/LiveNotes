@@ -1,0 +1,141 @@
+/* The outline: rows, bullets, the two-layer editor, row buttons. */
+
+.outline ul { list-style: none; margin: 0; padding-left: 26px; }
+.outline ul.root { padding-left: 0; }
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: var(--r-chip);
+  padding: 1px var(--sp-1);
+}
+li.is-hovered > .row { background: var(--hover); }
+
+.bullet {
+  flex: none;
+  width: 18px;
+  height: var(--lh-body); /* one text line, so the dot centres on the first line */
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+}
+.bullet::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: calc(var(--lh-body) / 2 - 3px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+}
+.bullet.is-collapsed::before {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink-soft) 25%, transparent);
+}
+
+.content { flex: 1; min-width: 0; }
+
+.rich, .editor {
+  min-height: var(--lh-body);
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  line-height: var(--lh-body);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rich { cursor: text; }
+
+/* The textarea's own text is transparent; the mirror underneath draws it with
+   mentions, dates and formulas coloured. Both must share every metric: they take
+   the same font from .content via `font: inherit`, and every text-layout property
+   is pinned here on both at once. Never style one layer alone, and never give the
+   .hl-* spans weight, padding, borders or letter-spacing (colour and background only). */
+.editor-wrap { position: relative; }
+.editor, .editor-mirror {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  line-height: var(--lh-body);
+  letter-spacing: normal;
+  word-spacing: normal;
+  font-kerning: auto;
+  font-feature-settings: normal;
+  font-variation-settings: normal;
+  font-optical-sizing: auto;
+  text-rendering: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  tab-size: 4;
+}
+.editor-mirror {
+  position: absolute;
+  inset: 0;
+  color: var(--ink);
+  pointer-events: none;
+}
+.editor {
+  position: relative;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent);
+  -webkit-text-fill-color: transparent;
+}
+/* While an IME composes, the textarea shows its own pre-edit text; metrics are
+   unchanged so the caret and wrapping don't move. */
+.editor-wrap.is-composing .editor { color: var(--ink); -webkit-text-fill-color: var(--ink); }
+.editor-wrap.is-composing .editor-mirror { visibility: hidden; }
+.editor::selection { background: var(--accent-wash); }
+.hl-place { color: var(--place-ink); background: var(--place-bg); border-radius: 3px; }
+.hl-date { color: var(--date-ink); background: var(--date-bg); border-radius: 3px; }
+.hl-formula { color: var(--formula-ink); background: var(--formula-bg); border-radius: 3px; }
+
+.node-menu {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.row:hover .node-menu, .node-menu:focus-within { opacity: 1; }
+.icon-btn {
+  border: 0;
+  background: none;
+  border-radius: var(--r-chip);
+  width: 28px;
+  height: var(--lh-body);
+  cursor: pointer;
+  font-size: 14px;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.icon-btn:hover { background: var(--bg); opacity: 1; }
+.icon-btn[aria-pressed='true'] { filter: none; opacity: 1; background: var(--bg); }
+
+.add-row, .empty {
+  margin-top: var(--sp-2);
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-chip);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+}
+.add-row:hover, .empty:hover { background: var(--bg); color: var(--ink); }
+
+@media (max-width: 640px) {
+  .node-menu { opacity: 1; }
+  .outline ul { padding-left: 18px; }
+}
