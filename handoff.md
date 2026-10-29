@@ -9,14 +9,12 @@ Last updated: 2026-10-29. The natural-phrases work is finished, reviewed,
 integrated and pushed on branch `ccr-0140cca5-y52lpq`, plus one fix from the
 live check (a city's extent no longer shrinks its area, §1).
 
-**Open:**
-
-- `geocode('lisbon')` from CI returns Photon's Lisbon *district* (38.995,
-  kind `region`) instead of Open-Meteo's city (38.725). It started with the
-  kinds commit, but that commit only parses, so the cause is probably Open-Meteo
-  answering the app's `count=1` request differently. The live check now logs
-  that raw request (`[om-app lisbon]`): read it on the next run and fix from
-  there.
+**Resolved since:** `geocode('lisbon')` in the live check had been returning
+Photon's Lisbon district instead of the city. Open-Meteo sometimes times out
+from CI runners, and under the tests' jsdom environment Node's fetch abort is
+not `instanceof DOMException`, so the timeout counted as a permanent failure
+and Photon answered. Aborts are now recognised by name (`services/errors.ts`),
+and the live check asserts the city.
 
 ---
 
@@ -112,8 +110,8 @@ Verification on the branch:
 
 ### Next steps, in order
 
-1. Confirm `live-check.yml` is green after the area fix, and read
-   `[om-app lisbon]` in its log to settle the Lisbon item above.
+1. Confirm `live-check.yml` and the APK workflow are green on the latest
+   push.
 2. Raise the open owner items in §5.
 3. Deferred to a later wave: combobox ARIA wiring on the textarea, PPLX →
    neighbourhood, the ±180° wrap, the test-strength items, `keepEditorFocus`

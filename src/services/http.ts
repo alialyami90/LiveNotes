@@ -4,9 +4,8 @@ import { inArea, searchArea, type Box } from './geo';
 import { describeWeather } from './wmo';
 import { isStreetTag, kindOfOpenMeteo, kindOfPhoton, photonExtent } from './kinds';
 import { areaPick, isMajor, isNear, mergeSearch, toPlace, type Candidate, type SearchSources } from './rank';
-
-/** The service couldn't be reached or is overloaded; worth retrying later. */
-export class TransientError extends Error {}
+import { isAbort, TransientError } from './errors';
+export { TransientError };
 
 interface OpenMeteoGeoResponse {
   results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string; population?: number; feature_code?: string }[];
@@ -56,7 +55,7 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
         retryable = res.status === 429 || res.status >= 500;
         if (!retryable) throw new Error(failure);
       } catch (e) {
-        if (!(e instanceof TypeError || (e instanceof DOMException && e.name === 'AbortError'))) throw e;
+        if (!(e instanceof TypeError || isAbort(e))) throw e;
         retryable = true;
       } finally {
         clearTimeout(timer);
@@ -164,7 +163,7 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
     p.then(
       (value) => ({ value, failed: false, transient: false }),
       (error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+        if (isAbort(error)) throw error;
         return { value: [] as T[], failed: true, transient: error instanceof TransientError };
       },
     );

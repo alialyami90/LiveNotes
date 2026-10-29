@@ -395,6 +395,19 @@ describe('httpServices weather and routes', () => {
     const down = fakeFetch([{ match: /forecast/, respond: () => ({ status: 503 }) }]);
     await expect(httpServices(down.fn, noSleep).weather(LIS, '2026-11-03')).rejects.toThrow('weather unavailable');
   });
+
+  // Node's fetch throws its own DOMException, which is not `instanceof` the jsdom one the
+  // live check runs under; the live check saw a timed-out Open-Meteo call treated as a
+  // permanent failure, so geocode('lisbon') fell back to Photon's Lisbon district.
+  it('a timed-out request is transient even when its AbortError comes from another realm', async () => {
+    let calls = 0;
+    const foreignAbort = async (): Promise<Response> => {
+      calls++;
+      throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+    };
+    await expect(httpServices(foreignAbort, noSleep).weather(LIS, '2026-11-03')).rejects.toBeInstanceOf(TransientError);
+    expect(calls).toBe(3);
+  });
 });
 
 describe('the area around a parent place (areaOf, inArea)', () => {

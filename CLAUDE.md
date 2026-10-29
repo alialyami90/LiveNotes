@@ -121,7 +121,8 @@ src/
               travel.ts (travel built-in, Directions URL, phrase → formula source)
   services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts (haversine, areaOf,
               searchArea)  rank.ts (picker merge, near/major rules, areaPick)  kinds.ts
-              (place kinds, icons)  wmo.ts (weather codes)  memo.ts
+              (place kinds, icons)  wmo.ts (weather codes)  errors.ts (TransientError,
+              isAbort)  memo.ts
   platform/   export.ts (download on web, share sheet on Android)
   ui/         store.tsx (DocProvider: state, focus, frozen viewDoc)
               usePlaceLookups.ts (top-down geocoding, retries)  usePersistence.ts

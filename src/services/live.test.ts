@@ -66,20 +66,12 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: open-meteo geocoding and pace
 describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices', () => {
   const s = httpServices();
   it('geocode picks the right Lisbon and finds a landmark near it', async () => {
-    // Diagnostic: since the kinds change, geocode('lisbon') has come back as Photon's Lisbon
-    // district (38.995) instead of Open-Meteo's city (38.725). Log the app's exact request.
-    // Open-Meteo is sometimes unreachable from CI runners (connect timeouts), so this never fails the test.
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const raw = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=lisbon&count=1&language=en&format=json', { signal: AbortSignal.timeout(8000) });
-        console.log(`[om-app lisbon #${attempt}]`, raw.status, (await raw.text()).slice(0, 400));
-      } catch (e) {
-        console.log(`[om-app lisbon #${attempt}] ERR`, (e as Error).message, String((e as { cause?: unknown }).cause ?? ''));
-      }
-    }
     const lisbon = await s.geocode('lisbon');
     console.log('[app] lisbon', JSON.stringify(lisbon));
     expect(lisbon?.label).toContain('Portugal');
+    // The city (38.725), not Photon's Lisbon district (38.995): a timed-out Open-Meteo call
+    // under jsdom once counted as permanent and let Photon answer instead.
+    expect(Math.abs(lisbon!.lat - 38.725), `lisbon at ${lisbon?.lat}`).toBeLessThan(0.05);
     const market = await s.geocode('time out market', lisbon!);
     console.log('[app] time out market near lisbon', JSON.stringify(market));
     expect(market && Math.abs(market.lat - 38.707) < 0.05).toBe(true);
