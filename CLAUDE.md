@@ -509,6 +509,7 @@ differences live in `src/platform/` and in CSS.
 | Output | A **debug APK** for sideloading. |
 | Data & network | `localStorage` persists in the WebView. The data APIs are HTTPS with permissive CORS, so they work from Capacitor's `https://localhost` origin unchanged. |
 | Phone toolbar | Soft keyboards have no Tab, and Backspace is unreliable. When a row is focused on a touch device (`pointer: coarse`), a toolbar sits at the bottom of the screen with outdent, indent, move up, move down, collapse and delete bullet, plus the view toggles. Its buttons `preventDefault` on pointer/mouse down so the editor keeps focus and the keyboard stays up. |
+| Back button | `src/platform/back.ts` (via `@capacitor/app`, native only): back goes through the router's `goBack()`, and exits the app from home. |
 | Export | Blob downloads don't work in a WebView. On native, `src/platform/export.ts` writes the note as `<title>.json` (e.g. `weekend-trip.json`, else `livenotes.json`) to the cache directory (`@capacitor/filesystem`) and opens the Android share sheet (`@capacitor/share`). On the web it downloads as before. Import ("Import note" in Home's `⋯` menu) uses `<input type=file>`, which Capacitor supports natively. |
 | Touch UI | On touch-only screens, the row view buttons move into the editing toolbar as 🗺️ 📅 ▦ toggles for the focused row, so rows keep their full width. Below 640 px Home's header is the wordmark and `⋯` over a full-width search, New note is a floating button, and the note screen's actions sit in its `⋯` menu. The page is full-bleed. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
 
@@ -550,11 +551,15 @@ Visual system: `DESIGN.md`.
   up to 8 resolved places, the place names, a 140-character preview and the
   folded search text. It is recomputed on every save, so home never parses
   notes.
-- **Migration** runs once, when there is no index. The old single document
-  (`livenotes:doc:v1`) becomes the first note, and its key is removed only
-  after the index write succeeds. A failed write keeps the note in memory and
-  retries next launch. An index that fails validation is rebuilt by scanning
-  the note keys.
+- **Migration.** Whenever the old single document (`livenotes:doc:v1`) is
+  present at launch, it is made sure of: it becomes a note marked
+  `legacy: true` (note key, then index, then the old key is removed). If a
+  marked note already exists, only its missing key is restored, or the old key
+  is removed; deleting the marked note also removes the old key, so a deleted
+  note never comes back. A failed write keeps the note in memory and retries
+  next launch. An index that fails validation is rebuilt by scanning the note
+  keys, and a meta with a malformed summary is recomputed from its note (or
+  left out, keeping the note key).
 - **`updatedAt` means "edited".** Only changes the user wrote (text, title,
   structure, view, collapsed) touch it. Place-cache writes from geocoding
   update the summary but not `updatedAt`, so just opening a note never
@@ -565,15 +570,22 @@ Visual system: `DESIGN.md`.
 - **Delete is soft first.** `deleteWithUndo` sets `deletedAt` and shows the
   undo bar ("Note deleted · Undo") for 6 s on Home and Archive. Expiry, a
   second delete, opening another note, or the app hiding (`pagehide`, or the
-  tab becoming hidden) purges it. Focus moves to Undo, then back to the
+  tab becoming hidden) purges it, and only that note, never another tab's
+  pending delete. Focus moves to Undo, then back to the
   restored card, without ever leaving a field the user is typing in. Construction
   also purges anything deleted more than 6 s ago.
+- **Storage full.** A failed save keeps the note dirty and retries on the next
+  change; the note screen shows "Not saved: storage is full or unavailable."
+  and Home alerts once if a note was left unsaved. A delete that cannot be
+  written offers to delete the note permanently, which frees space.
 - **Leaving a brand-new empty note discards it.** This applies to notes
   created this session with no title and no text. Blankness is judged on the
   editor's in-memory doc, so a failed save never deletes typed text.
 
 **Routes** (`app/router.ts`, hash-based so they work in the WebView):
 - `#/` is home, `#/note/<id>` a note, and `#/archive` archived notes.
+- The note screen's Back and Delete both use `goBack()`, so you return to
+  where you opened the note (Home or Archive).
 - In-app back uses `history.back()` when there is in-app history, otherwise it
   replaces the entry with home.
 - Redirects (an unknown or deleted note, the crash screen) replace rather than
