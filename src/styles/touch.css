@@ -1,4 +1,4 @@
-/* Phones and touch: the editing toolbar, the place picker, and 44 px hit areas. */
+/* Phones and touch: the editing toolbar, the place and travel-mode pickers, and 44 px hit areas. */
 
 /* Touch screens: view toggles live in the editing toolbar, so rows keep their width. */
 @media (hover: none) and (pointer: coarse) {
@@ -93,6 +93,9 @@
   text-transform: uppercase;
   color: var(--ink-soft);
 }
+/* travel-mode popup: rows wear the formula wash, like the mode words it writes */
+.picker-modes .picker-option.is-active { background: var(--formula-bg); }
+.picker-modes .picker-option.is-active strong { color: var(--formula-ink); }
 @media (pointer: coarse) {
   .picker-option { padding: var(--sp-3); min-height: 44px; } /* align-items: center keeps a one-line row centred */
   .agenda .entry { min-height: 44px; display: flex; align-items: center; }

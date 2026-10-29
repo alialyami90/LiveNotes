@@ -7,24 +7,34 @@ import { placeKey, tokenize } from '../syntax/tokenize';
 import { activeMention, insertMention } from '../syntax/mention';
 import { usePlaceSearch, type Suggestion } from './usePlaceSearch';
 import { PlacePicker } from './PlacePicker';
+import { ModePicker } from './ModePicker';
+import { useModePicker } from './useModePicker';
 
 /** Raw text with tokens coloured; must render character-for-character like the textarea. */
 function Mirror({ text }: { text: string }) {
   return (
     <div className="editor-mirror" aria-hidden>
-      {tokenize(text).map((s, i) =>
-        s.kind === 'text' ? (
-          <span key={i}>{s.text}</span>
-        ) : (
+      {tokenize(text).map((s, i) => {
+        if (s.kind === 'route') return null; // zero-width marker; its words are already drawn
+        if (s.kind === 'text') return <span key={i} className={s.mode ? 'hl-mode' : undefined}>{s.text}</span>;
+        return (
           <span key={i} className={`hl-${s.kind}`}>
             {s.raw}
           </span>
-        ),
-      )}
+        );
+      })}
       {/* keeps a trailing newline from collapsing the last line */}
       {'\u200b'}
     </div>
   );
+}
+
+const BOUNDARY = /^[\s\p{P}]$/u;
+
+/** True when `next` is `prev` plus one space or punctuation mark just before `caret`. */
+function typedBoundary(prev: string, next: string, caret: number): boolean {
+  if (next.length !== prev.length + 1 || caret < 1) return false;
+  return BOUNDARY.test(next[caret - 1]) && next.slice(0, caret - 1) + next.slice(caret) === prev;
 }
 
 const VIEW_COMMAND = /(?:^|\s+)\/(map|calendar|table|none)$/;
@@ -50,6 +60,9 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   const showing = pickerOpen && (items.length > 0 || loading);
   const highlighted = Math.min(active, Math.max(items.length - 1, 0));
   const trackCaret = () => setCaretPos(ref.current?.selectionStart ?? 0);
+  // The travel-mode popup; the place picker wins while it is showing.
+  const mode = useModePicker(text);
+  const modeShowing = mode.open && !showing;
 
   const pick = (s: Suggestion) => {
     if (!mention) return;
@@ -59,6 +72,14 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
     setCaretPos(next.caret);
     setArmedAt(null);
     setActive(0);
+    mode.arm(next.text, next.caret);
+  };
+
+  const chooseMode = (i: number) => {
+    const next = mode.choose(i, ref.current?.selectionStart ?? caretPos);
+    if (!next) return;
+    apply((d) => setText(d, id, next.text), { id, caret: next.caret });
+    setCaretPos(next.caret);
   };
 
   useLayoutEffect(() => {
@@ -111,6 +132,11 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         return;
       }
     }
+    if (modeShowing) {
+      const handled = mode.onKeyDown(e);
+      if (handled === 'choose') chooseMode(mode.active);
+      if (handled !== 'pass') return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       const cmd = text.match(VIEW_COMMAND);
@@ -155,10 +181,16 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         value={text}
         spellCheck={false}
         onChange={(e) => {
-          apply((d) => setText(d, id, e.target.value));
-          setCaretPos(e.target.selectionStart);
-          setArmedAt(activeMention(e.target.value, e.target.selectionStart)?.start ?? null);
+          const value = e.target.value;
+          const at = e.target.selectionStart;
+          apply((d) => setText(d, id, value));
+          const typing = activeMention(value, at);
+          setCaretPos(at);
+          setArmedAt(typing?.start ?? null);
           setActive(0);
+          // A space or punctuation just typed after a mention completes a phrase; a
+          // hyphen or apostrophe that continues the name (@Porto-Novo) does not.
+          if (!typing && typedBoundary(text, value, at)) mode.arm(value, at);
         }}
         onSelect={trackCaret}
         onKeyDown={onKeyDown}
@@ -167,6 +199,7 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         onBlur={() => setFocus((f) => (f?.id === id ? null : f))}
       />
       {showing && <PlacePicker items={items} active={highlighted} loading={loading} onPick={pick} onHover={setActive} />}
+      {modeShowing && <ModePicker active={mode.active} onPick={chooseMode} onHover={mode.setActive} />}
     </div>
   );
 }

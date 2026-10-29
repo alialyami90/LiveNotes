@@ -97,9 +97,10 @@ li.is-hovered > .row { background: var(--hover); }
 .editor-wrap.is-composing .editor { color: var(--ink); -webkit-text-fill-color: var(--ink); }
 .editor-wrap.is-composing .editor-mirror { visibility: hidden; }
 .editor::selection { background: var(--accent-wash); }
+/* Mirror highlights. Phrase words (a route's mode word, weather words) compute like formulas, so they wear its colours. */
 .hl-place { color: var(--place-ink); background: var(--place-bg); border-radius: 3px; }
 .hl-date { color: var(--date-ink); background: var(--date-bg); border-radius: 3px; }
-.hl-formula { color: var(--formula-ink); background: var(--formula-bg); border-radius: 3px; }
+.hl-formula, .hl-mode, .hl-weather { color: var(--formula-ink); background: var(--formula-bg); border-radius: 3px; }
 
 .node-menu {
   display: flex;
