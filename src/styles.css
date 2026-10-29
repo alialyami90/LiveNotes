@@ -195,6 +195,10 @@ li.is-hovered > .row { background: var(--hover); }
   caret-color: var(--ink);
   -webkit-text-fill-color: transparent;
 }
+/* While an IME composes, the textarea shows its own pre-edit text; metrics are
+   unchanged so the caret and wrapping don't move. */
+.editor-wrap.is-composing .editor { color: var(--ink); -webkit-text-fill-color: var(--ink); }
+.editor-wrap.is-composing .editor-mirror { visibility: hidden; }
 .editor::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 .hl-place { color: var(--place-ink); background: var(--place-bg); border-radius: 3px; }
 .hl-date { color: var(--date-ink); background: var(--date-bg); border-radius: 3px; }
@@ -243,6 +247,26 @@ li.is-hovered > .row { background: var(--hover); }
   /* long chips wrap like text instead of jumping to their own line */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+.chip-wrap { position: relative; display: inline; }
+.chip-formula.is-error { cursor: pointer; }
+.chip-popover {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 20;
+  width: max-content;
+  max-width: min(22em, 80vw);
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--error-ink);
+  background: var(--error-bg);
+  color: var(--error-ink);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: normal;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
 }
 .chip-formula.is-error {
   display: inline-block;
@@ -340,16 +364,15 @@ li.is-hovered > .row { background: var(--hover); }
 .table-view tr.is-hovered td { background: var(--hover); }
 .table-view .rich { line-height: 22px; min-height: 0; cursor: default; }
 
-.agenda { display: none; list-style: none; margin: 12px 0 0; padding: 0; }
+.agenda { list-style: none; margin: 12px 0 0; padding: 0; }
 .agenda li { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.day .dot { display: inline-block; width: 8px; height: 8px; margin: 2px 2px 0 0; border-radius: 50%; background: var(--date-ink); }
 .agenda-date { flex: none; width: 92px; font-size: 13px; font-weight: 600; color: var(--date-ink); padding-top: 2px; }
 .agenda-entries { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .agenda .entry { font-size: 14px; padding: 3px 8px; white-space: normal; }
 
 @container (max-width: 520px) {
   .day { min-height: 34px; }
-  .day .entry { font-size: 0; width: 8px; height: 8px; padding: 0; border-radius: 50%; display: inline-block; margin-right: 2px; background: var(--date-ink); }
-  .agenda { display: block; }
   .col-place { display: none; }
   .table-view th, .table-view td { padding: 6px 8px; }
 }

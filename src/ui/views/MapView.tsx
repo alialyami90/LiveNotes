@@ -23,9 +23,9 @@ export default function MapView({ id }: { id: NodeId }) {
 
   const stops = collectPlaces(doc, contexts, id);
   const unresolved = unresolvedPlaces(doc, contexts, id);
-  const pending = unresolved.filter((k) => placeStatus[k] !== 'missing' && placeStatus[k] !== 'error');
-  const unreachable = unresolved.filter((k) => placeStatus[k] === 'error');
-  const notFound = unresolved.filter((k) => placeStatus[k] === 'missing');
+  const pending = unresolved.filter((u) => placeStatus[u.key] !== 'missing' && placeStatus[u.key] !== 'error');
+  const unreachable = unresolved.filter((u) => placeStatus[u.key] === 'error');
+  const notFound = unresolved.filter((u) => placeStatus[u.key] === 'missing');
   const stopsKey = JSON.stringify(stops.map((s) => [s.nodeId, s.place.lat, s.place.lon]));
 
   // Keep latest callbacks reachable from Leaflet handlers without rebuilding markers.
@@ -90,10 +90,10 @@ export default function MapView({ id }: { id: NodeId }) {
         <div className="view-empty">No places to show yet — mention one like @Lisbon.</div>
       )}
       {unreachable.length > 0 && (
-        <div className="view-note">Couldn’t reach the place service for {unreachable.join(', ')} — retrying. Tap a ⟳ place to retry now.</div>
+        <div className="view-note">Couldn’t reach the place service for {unreachable.map((u) => u.name).join(', ')} — retrying. Tap a ⟳ place to retry now.</div>
       )}
       {notFound.length > 0 && (
-        <div className="view-note">Couldn’t find: {notFound.join(', ')}. Edit the mention and pick a suggestion.</div>
+        <div className="view-note">Couldn’t find: {notFound.map((u) => u.name).join(', ')}. Edit the mention and pick a suggestion.</div>
       )}
     </>
   );

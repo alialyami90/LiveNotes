@@ -33,6 +33,9 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   const { doc, viewDoc, contexts, apply, setFocus } = useStore();
   const text = doc.nodes[id].text;
   const ref = useRef<HTMLTextAreaElement>(null);
+  // An IME's underlined pre-edit text isn't in the textarea's value yet in a way the
+  // mirror can follow, so while composing the textarea draws its own text instead.
+  const [composing, setComposing] = useState(false);
 
   // The @mention under the caret drives the place picker, but only once the user
   // types in it: tapping a row that ends in "@Lisbon" must not hijack Enter/Tab/arrows.
@@ -140,7 +143,7 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   };
 
   return (
-    <div className="editor-wrap">
+    <div className={`editor-wrap${composing ? ' is-composing' : ''}`}>
       <Mirror text={text} />
       <textarea
         ref={ref}
@@ -156,6 +159,8 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         }}
         onSelect={trackCaret}
         onKeyDown={onKeyDown}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={() => setComposing(false)}
         onBlur={() => setFocus((f) => (f?.id === id ? null : f))}
       />
       {showing && <PlacePicker items={items} active={highlighted} loading={loading} onPick={pick} onHover={setActive} />}

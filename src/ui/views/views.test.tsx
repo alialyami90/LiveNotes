@@ -6,6 +6,7 @@ import type { Services } from '../../services/types';
 import { resolveContexts } from '../../context/resolve';
 import { DocProvider } from '../store';
 import { Outline } from '../Outline';
+import { CalendarView } from './CalendarView';
 import { collectDates, collectPlaces, plainText, unresolvedPlaces } from './collect';
 
 type Spec = [string, string, Spec[]?, ViewKind?];
@@ -43,7 +44,7 @@ describe('collect', () => {
   });
 
   it('unresolvedPlaces lists mention keys in the subtree that have no coordinates yet', () => {
-    expect(unresolvedPlaces(doc, ctx, 'trip')).toEqual(['atlantis']);
+    expect(unresolvedPlaces(doc, ctx, 'trip')).toEqual([{ key: 'atlantis', name: 'Atlantis' }]);
   });
 
   it('collectDates groups nodes by their own dates, sorted', () => {
@@ -100,13 +101,31 @@ describe('CalendarView', () => {
     expect(container.querySelector('[data-view="calendar"] h4')).toHaveTextContent('November – December 2026');
   });
 
-  it('also lists the days as an agenda for narrow screens', () => {
-    const { container } = setup(build([['trip', 'Trip', [['a', 'Nov 3 arrive'], ['b', 'Nov 5 leave'], ['c', 'Nov 5 dinner']], 'calendar']]));
-    const days = container.querySelectorAll('[data-view="calendar"] .agenda li');
+  const narrowDoc = () =>
+    build([['trip', 'Trip', [['a', 'Nov 3 arrive'], ['b', 'Nov 5 leave'], ['c', 'Nov 5 dinner']]]]);
+  const renderCalendar = (forceNarrow?: boolean) =>
+    render(
+      <DocProvider initialDoc={narrowDoc()} services={services} storage={null} today={TODAY}>
+        <CalendarView id="trip" forceNarrow={forceNarrow} />
+      </DocProvider>,
+    );
+
+  it('when narrow, the grid shows dots and the agenda holds the buttons', () => {
+    const { container } = renderCalendar(true);
+    const grid = container.querySelector<HTMLElement>('.month-grid')!;
+    expect(within(grid).queryAllByRole('button')).toHaveLength(0);
+    expect(grid.querySelectorAll('span[aria-hidden="true"]').length).toBeGreaterThanOrEqual(3);
+    const days = container.querySelectorAll('.agenda li');
     expect(days).toHaveLength(2);
     expect(days[0]).toHaveTextContent('Tue, Nov 3');
-    expect(days[0]).toHaveTextContent('arrive');
+    expect(within(container.querySelector<HTMLElement>('.agenda')!).getAllByRole('button')).toHaveLength(3);
     expect(within(days[1] as HTMLElement).getAllByRole('button')).toHaveLength(2);
+  });
+
+  it('when wide (the default), there is no agenda list', () => {
+    const { container } = renderCalendar();
+    expect(container.querySelector('.agenda')).toBeNull();
+    expect(within(container.querySelector<HTMLElement>('.month-grid')!).getAllByRole('button')).toHaveLength(3);
   });
 
   it('clicking an entry focuses its node for editing', async () => {

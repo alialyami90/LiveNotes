@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode } from '../model/types';
 import type { Services } from '../services/types';
@@ -88,6 +88,44 @@ describe('Outline', () => {
   it('a formula error renders an error chip without crashing', async () => {
     setup(build([['a', 'oops {1 +}']]));
     expect(await screen.findByText(/⚠/)).toHaveClass('is-error');
+  });
+
+  it('tapping an error chip shows the full message in a popover, without opening the editor', async () => {
+    const { user } = setup(build([['a', 'oops {1 +}']]));
+    const chip = await screen.findByText(/⚠/);
+    expect(screen.queryByRole('status')).toBeNull();
+    await user.click(chip);
+    const pop = screen.getByRole('status');
+    expect(pop.textContent).toMatch(/\S/);
+    expect(pop.textContent).not.toBe(chip.textContent);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await user.click(chip);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('the error popover closes on Escape and on an outside tap', async () => {
+    const { user } = setup(build([['a', 'oops {1 +}'], ['b', 'other']]));
+    const chip = await screen.findByText(/⚠/);
+    await user.click(chip);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('status')).toBeNull();
+    await user.click(chip);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('marks the editor as composing between compositionstart and compositionend', async () => {
+    const { user, container } = setup(build([['a', 'hello']]));
+    await user.click(screen.getByText('hello'));
+    const wrap = container.querySelector('.editor-wrap')!;
+    const editor = screen.getByRole('textbox');
+    expect(wrap).not.toHaveClass('is-composing');
+    fireEvent.compositionStart(editor);
+    expect(wrap).toHaveClass('is-composing');
+    fireEvent.compositionEnd(editor);
+    expect(wrap).not.toHaveClass('is-composing');
   });
 
   it('typing /map at the end of a row and pressing Enter attaches a map view', async () => {
