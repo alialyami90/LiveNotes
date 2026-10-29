@@ -1,0 +1,23 @@
+/* Note chrome. Task 7 supplies --font-display (Fraunces); until then Georgia stands in. */
+.title-field {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--accent);
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.title-field::placeholder { color: var(--ink-soft); opacity: 0.6; }
+.title-field::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }

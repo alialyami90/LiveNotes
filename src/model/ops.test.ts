@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc, OutlineNode } from './types';
 import {
-  deleteNode, indent, insertAfter, moveDown, moveUp, outdent, removeOrMerge, setPlace, setText, setView, splitNode, toggleCollapse,
+  deleteNode, indent, insertAfter, moveDown, moveUp, outdent, removeOrMerge, setPlace, setText, setTitle, setView, splitNode, toggleCollapse,
 } from './ops';
 import { ancestors, parentOf, subtree, visibleOrder } from './tree';
 
@@ -168,6 +168,21 @@ describe('ops', () => {
     expect(setPlace(d, 'lisbon', p).doc.places.lisbon).toEqual(p);
   });
 
+  it('setTitle returns a new doc with the title and leaves the old doc untouched', () => {
+    const d = deepFreeze(build([['a']]));
+    const r = setTitle(d, 'Weekend');
+    expect(r.doc.title).toBe('Weekend');
+    expect(r.doc).not.toBe(d);
+    expect(r.doc.nodes).toBe(d.nodes);
+    expect(d.title).toBeUndefined();
+    expect(r.focus).toBeUndefined();
+  });
+
+  it('setTitle stores an empty title as an empty string', () => {
+    const d = build([['a']]);
+    expect(setTitle(setTitle(d, 'x').doc, '').doc.title).toBe('');
+  });
+
   it('ops never mutate the input doc', () => {
     const d = deepFreeze(build([['a', [['a1']]], ['bc', [['b1']]], ['']]));
     expect(() => {
@@ -184,6 +199,7 @@ describe('ops', () => {
       setView(d, 'a', 'table');
       setPlace(d, 'k', { name: 'k', lat: 0, lon: 0 });
       deleteNode(d, 'bc');
+      setTitle(d, 'Trip');
     }).not.toThrow();
   });
 });

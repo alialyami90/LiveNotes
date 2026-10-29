@@ -140,6 +140,11 @@ export function setText(doc: Doc, id: NodeId, text: string): OpResult {
   return { doc: patch(doc, id, { text }) };
 }
 
+/** An empty title is kept as '' (not deleted) so "cleared on purpose" stays distinguishable from a migrated note. */
+export function setTitle(doc: Doc, title: string): OpResult {
+  return { doc: { ...doc, title } };
+}
+
 export function toggleCollapse(doc: Doc, id: NodeId): OpResult {
   return { doc: patch(doc, id, { collapsed: !doc.nodes[id].collapsed }) };
 }
