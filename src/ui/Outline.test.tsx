@@ -6,7 +6,6 @@ import type { Services } from '../services/types';
 import { DocProvider, useStore } from './store';
 import { STORAGE_KEY } from '../model/storage';
 import { TransientError } from '../services/http';
-import { App } from './App';
 import { Outline } from './Outline';
 
 function build(items: [string, string][]): Doc {
@@ -33,6 +32,13 @@ function setup(doc: Doc) {
 }
 
 describe('Outline', () => {
+  it('an empty outline offers "Start typing…", which adds a focused first bullet', async () => {
+    const { user, container } = setup(build([]));
+    await user.click(screen.getByRole('button', { name: 'Start typing…' }));
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(1);
+    expect(screen.getByRole('textbox')).toHaveFocus();
+  });
+
   it('typing then Enter creates a second, focused row', async () => {
     const { user, container } = setup(build([['a', 'hello']]));
     await user.click(screen.getByText('hello'));
@@ -280,23 +286,6 @@ describe('editor highlighting', () => {
     expect(mirror.querySelector('.hl-formula')).toHaveTextContent('{1 + 1}');
     // the mirror must reproduce the raw text exactly so the caret lines up
     expect(mirror.textContent!.replace(/​$/, '')).toBe('x @Lisbon on Nov 3 {1 + 1}');
-  });
-});
-
-describe('header menu', () => {
-  it('toggles the actions menu and closes it after an action', async () => {
-    const user = userEvent.setup();
-    render(
-      <DocProvider initialDoc={build([['a', 'x']])} services={services} storage={null} today="2026-10-28">
-        <App />
-      </DocProvider>,
-    );
-    const toggle = screen.getByRole('button', { name: 'Menu' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await user.click(screen.getByRole('button', { name: 'Import' }));
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -575,22 +564,6 @@ describe('review fixes: picker', () => {
     } finally {
       Element.prototype.scrollIntoView = original;
     }
-  });
-});
-
-describe('review fixes: header menu', () => {
-  it('closes when tapping outside it', async () => {
-    const user = userEvent.setup();
-    render(
-      <DocProvider initialDoc={build([['a', 'x']])} services={services} storage={null} today="2026-10-28">
-        <App />
-      </DocProvider>,
-    );
-    const toggle = screen.getByRole('button', { name: 'Menu' });
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await user.click(screen.getByText('x'));
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 });
 

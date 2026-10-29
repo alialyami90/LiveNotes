@@ -3,9 +3,10 @@ import type { Doc } from '../model/types';
 import { parseImport } from '../model/storage';
 import type { Services } from '../services/types';
 import { useLibrary } from '../library/LibraryProvider';
+import { isBlankDoc } from '../library/blank';
 import { noteKey } from '../library/storage';
 import { DocProvider, useStore } from '../ui/store';
-import { App } from '../ui/App';
+import { NoteScreen } from '../note/NoteScreen';
 import { navigate } from './router';
 
 /** Everything but the place cache: geocode results are not edits, so they must not reorder Recent. */
@@ -26,12 +27,14 @@ interface Props {
 }
 
 export function NoteRoute({ id, storage, services, onDoc }: Props) {
-  const { library, refresh, today } = useLibrary();
+  const { library, refresh, today, isNewThisSession } = useLibrary();
   // Decided once on open: a note deleted elsewhere while open keeps its editor (save re-adds it).
   // Asks the library rather than `metas`, which lags one render behind a note created just now.
   const [doc] = useState(() =>
     library.list().some((m) => m.id === id && m.deletedAt === undefined) ? library.read(id) : null,
   );
+  // Decided once on open, like the doc: typing the first title must not make the field refocus.
+  const [isNew] = useState(() => isNewThisSession(id) && !!doc && isBlankDoc(doc));
   // Replace, not push: a bad entry left behind would make back land on it and redirect forever.
   useEffect(() => {
     if (!doc) navigate('#/', { replace: true });
@@ -53,7 +56,7 @@ export function NoteRoute({ id, storage, services, onDoc }: Props) {
   return (
     <DocProvider storageKey={noteKey(id)} storage={storage} initialDoc={doc} services={services} today={today} onSaved={onSaved}>
       <TrackDoc onDoc={track} />
-      <App />
+      <NoteScreen id={id} isNew={isNew} />
     </DocProvider>
   );
 }

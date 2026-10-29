@@ -1,0 +1,109 @@
+/* Note screen layout only. Colour and type tokens come from styles.css, with fallbacks for when they move. */
+.note-screen {
+  min-height: 100dvh;
+}
+
+.note-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1000; /* above Leaflet panes, which have their own stacking context */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px;
+  background: color-mix(in srgb, var(--bg, #f7f5f0) 85%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line, #e6e1d6);
+}
+
+.note-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink, #23211c);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.note-bar-btn:hover,
+.note-bar-btn[aria-expanded='true'] { background: var(--line, #e6e1d6); }
+.note-bar-btn:focus-visible,
+.note-menu-item:focus-visible { outline: 2px solid var(--accent, #c2410c); outline-offset: -2px; }
+
+.note-pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--line, #e6e1d6);
+  color: var(--ink-soft, #6b665c);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note-menu-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+.note-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 176px;
+  padding: 6px;
+  background: var(--paper, #fffdf9);
+  border: 1px solid var(--line, #e6e1d6);
+  border-radius: 12px;
+  box-shadow: var(--shadow, 0 8px 24px rgb(0 0 0 / 0.12));
+}
+
+.note-menu-item {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink, #23211c);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.note-menu-item:hover { background: var(--bg, #f7f5f0); }
+.note-menu-item.is-danger { color: var(--error-ink, #b42318); }
+
+.note-page {
+  max-width: 860px;
+  margin: 32px auto 80px;
+  padding: 32px 40px;
+  background: var(--paper, #fffdf9);
+  border: 1px solid var(--line, #e6e1d6);
+  border-radius: 16px;
+  box-shadow: var(--shadow, none);
+}
+
+/* Room above the fixed toolbar, and for a picker on the last rows to scroll into view. */
+.note-screen:has(.mobile-toolbar) .note-page { margin-bottom: 96px; }
+.note-screen:has(.picker) .note-page { margin-bottom: 380px; }
+
+@media (max-width: 640px) {
+  .note-bar { padding-left: 8px; padding-right: 8px; }
+  .note-page {
+    margin: 0 0 24px;
+    padding: 16px 12px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* The legend is desktop help; phones get the toolbar instead. */
+  .note-page .legend { display: none; }
+}
