@@ -3,6 +3,7 @@ import type { ISODate } from '../../context/resolve';
 import { useStore } from '../store';
 import { setHovered, useHovered } from '../hover';
 import { collectDates, plainText } from './collect';
+import { formatDate } from '../../formula/format';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -41,6 +42,23 @@ export function CalendarView({ id }: { id: NodeId }) {
   if (dates.length === 0) {
     return <div className="view-empty">No dates under this bullet yet — mention one like “Nov 3”.</div>;
   }
+  const entry = (nodeId: NodeId) => {
+    const text = doc.nodes[nodeId].text;
+    const label = plainText(text, { dates: false }) || plainText(text);
+    return (
+      <button
+        type="button"
+        key={nodeId}
+        className={`entry${hovered === nodeId ? ' is-hovered' : ''}`}
+        title={label}
+        onMouseEnter={() => setHovered(nodeId)}
+        onMouseLeave={() => setHovered(null)}
+        onClick={() => setFocus({ id: nodeId, caret: text.length })}
+      >
+        {label}
+      </button>
+    );
+  };
   const first = dates[0];
   const last = dates[dates.length - 1];
 
@@ -60,27 +78,20 @@ export function CalendarView({ id }: { id: NodeId }) {
           return (
             <div className={`day${entries.length ? ' has-entries' : ''}${outside ? ' is-outside' : ''}`} key={iso}>
               <span className="day-num">{d === 1 ? `${MONTHS[m - 1].slice(0, 3)} 1` : d}</span>
-              {entries.map((nodeId) => {
-                const text = doc.nodes[nodeId].text;
-                const label = plainText(text, { dates: false }) || plainText(text);
-                return (
-                  <button
-                    type="button"
-                    key={nodeId}
-                    className={`entry${hovered === nodeId ? ' is-hovered' : ''}`}
-                    title={label}
-                    onMouseEnter={() => setHovered(nodeId)}
-                    onMouseLeave={() => setHovered(null)}
-                    onClick={() => setFocus({ id: nodeId, caret: text.length })}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+              {entries.map(entry)}
             </div>
           );
         })}
       </div>
+      {/* Narrow screens read the plan as a list; the grid above shrinks to dots. */}
+      <ol className="agenda">
+        {dates.map((iso) => (
+          <li key={iso}>
+            <span className="agenda-date">{formatDate(iso)}</span>
+            <div className="agenda-entries">{byDate.get(iso)!.map(entry)}</div>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

@@ -13,6 +13,8 @@ export interface NodeContext {
   ownDates: ISODate[];
   /** Previous sibling's effective place, or the parent's for a first child. */
   prevPlaceKey?: string;
+  /** The parent's effective place: biases lookups of this node's own mentions. */
+  inheritedPlaceKey?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -56,6 +58,7 @@ export function resolveContexts(doc: Doc, today: ISODate): Map<NodeId, NodeConte
       ownPlaces,
       ownDates,
       prevPlaceKey,
+      inheritedPlaceKey: inherited.placeKey,
     };
     out.set(id, ctx);
     visitChildren(id, ctx);

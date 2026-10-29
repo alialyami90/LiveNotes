@@ -49,3 +49,12 @@ export function plainText(text: string, { dates = true } = {}): string {
     .replace(/^[\s—–\-:,·]+/, '')
     .trim();
 }
+
+/** Mention keys under the view that have no coordinates yet (pending or not found). */
+export function unresolvedPlaces(doc: Doc, contexts: Map<NodeId, NodeContext>, id: NodeId): string[] {
+  const keys = new Set<string>();
+  for (const nodeId of scope(doc, id)) {
+    for (const key of contexts.get(nodeId)?.ownPlaces ?? []) if (!doc.places[key]) keys.add(key);
+  }
+  return [...keys];
+}

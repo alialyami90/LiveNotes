@@ -1,4 +1,4 @@
-import { useRef, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { parseImport } from '../model/storage';
 import { sampleDoc } from '../model/sample';
 import { exportDocument } from '../platform/export';
@@ -9,6 +9,7 @@ import { MobileToolbar } from './MobileToolbar';
 export function App() {
   const { doc, replaceDoc } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const onImport = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -31,7 +32,16 @@ export function App() {
             <p>Dynamic documents for making plans</p>
           </div>
         </div>
-        <nav className="actions">
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          ⋯
+        </button>
+        <nav className={`actions${menuOpen ? ' is-open' : ''}`} onClick={() => setMenuOpen(false)}>
           <button
             type="button"
             onClick={() =>

@@ -36,7 +36,7 @@ export function TableView({ id }: { id: NodeId }) {
         <thead>
           <tr>
             <th>Item</th>
-            <th>Place</th>
+            <th className="col-place">Place</th>
             <th>Date</th>
             {Array.from({ length: columns }, (_, c) => (
               <th key={c}>{header(formulas.map((f) => f[c]), c)}</th>
@@ -59,7 +59,7 @@ export function TableView({ id }: { id: NodeId }) {
                 <td>
                   <RichText nodeId={rowId} text={doc.nodes[rowId].text} hideFormulas />
                 </td>
-                <td>{place ? place.name : ''}</td>
+                <td className="col-place">{place ? place.name : ''}</td>
                 <td>{date ? formatDate(date) : ''}</td>
                 {Array.from({ length: columns }, (_, c) => (
                   <td key={c}>{formulas[r][c] !== undefined && <FormulaChip nodeId={rowId} source={formulas[r][c]} />}</td>

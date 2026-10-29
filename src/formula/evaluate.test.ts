@@ -12,6 +12,7 @@ const PLACES: Record<string, Place> = { lisbon: LISBON, porto: PORTO };
 function fakeServices() {
   const calls: string[] = [];
   const services: Services = {
+    search: async () => [],
     geocode: async (name) => {
       calls.push(`geocode:${name}`);
       return PLACES[name] ?? null;

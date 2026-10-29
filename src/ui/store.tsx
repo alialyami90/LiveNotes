@@ -7,7 +7,7 @@ import type { Services } from '../services/types';
 import { memoize } from '../services/memo';
 import { httpServices } from '../services/http';
 
-export type PlaceStatus = 'pending' | 'missing';
+export type PlaceStatus = 'pending' | 'missing' | 'error';
 
 interface Store {
   /** Live document; the focused row's editor reads from this. */
@@ -64,9 +64,20 @@ interface Props {
   /** null disables persistence (tests, or browsers with site data blocked). */
   storage?: Storage | null;
   today?: ISODate;
+  /** Backoff for places whose lookup failed because a service was unreachable. */
+  retryDelaysMs?: number[];
 }
 
-export function DocProvider({ children, initialDoc, services: given, storage = safeStorage(), today = localToday() }: Props) {
+const RETRY_DELAYS_MS = [3000, 10000, 30000, 60000];
+
+export function DocProvider({
+  children,
+  initialDoc,
+  services: given,
+  storage = safeStorage(),
+  today = localToday(),
+  retryDelaysMs = RETRY_DELAYS_MS,
+}: Props) {
   const [state, setState] = useState<State>(() => ({
     doc: initialDoc ?? loadDoc(storage ?? { getItem: () => null }),
     focus: null,
@@ -90,50 +101,78 @@ export function DocProvider({ children, initialDoc, services: given, storage = s
     setState((s) => next(s, s.doc, typeof update === 'function' ? update(s.focus) : update));
   }, []);
 
+
+  const statusRef = useRef(placeStatus);
+  statusRef.current = placeStatus;
+  const attempts = useRef(new Map<string, number>());
+  const waiters = useRef(new Map<string, ((p: Place | null) => void)[]>());
+  const [retryTick, setRetryTick] = useState(0);
+
+  const settle = useCallback((key: string, place: Place | null) => {
+    waiters.current.get(key)?.forEach((resolve) => resolve(place));
+    waiters.current.delete(key);
+  }, []);
+
+  /**
+   * One lookup per key. "Not found" only when the services answered with nothing;
+   * an unreachable service is an "error" that is retried with backoff.
+   */
+  const lookUp = useCallback(
+    async (key: string, near?: Place) => {
+      requested.current.add(key);
+      setPlaceStatus((s) => ({ ...s, [key]: 'pending' }));
+      try {
+        const place = await services.geocode(key, near);
+        if (place) apply((d) => (d.places[key] ? { doc: d } : setPlace(d, key, place)));
+        setPlaceStatus((s) => {
+          const { [key]: _done, ...rest } = s;
+          return place ? rest : { ...rest, [key]: 'missing' };
+        });
+        settle(key, place);
+      } catch {
+        const n = attempts.current.get(key) ?? 0;
+        setPlaceStatus((s) => ({ ...s, [key]: 'error' }));
+        if (n < retryDelaysMs.length) {
+          attempts.current.set(key, n + 1);
+          setTimeout(() => {
+            requested.current.delete(key);
+            setRetryTick((t) => t + 1);
+          }, retryDelaysMs[n]);
+        } else {
+          settle(key, null);
+        }
+      }
+    },
+    [services, apply, settle, retryDelaysMs],
+  );
+
   /** A new document may lack places this session already looked up, so lookups start over. */
   const load = useCallback((doc: Doc, keepFocus: boolean) => {
     requested.current.clear();
+    attempts.current.clear();
+    for (const key of [...waiters.current.keys()]) settle(key, doc.places[key] ?? null);
     setPlaceStatus({});
     setState((s) => next(s, doc, keepFocus && s.focus && doc.nodes[s.focus.id] ? s.focus : null));
-  }, []);
+  }, [settle]);
 
   const replaceDoc = useCallback((doc: Doc) => load(doc, false), [load]);
 
-  const inFlight = useRef(new Map<string, Promise<Place | null>>());
+  const mentioned = useRef(new Set<string>());
 
-  const lookUp = useCallback(
-    async (key: string): Promise<Place | null> => {
-      setPlaceStatus((s) => (s[key] === 'pending' ? s : { ...s, [key]: 'pending' }));
-      let place: Place | null = null;
-      try {
-        place = await services.geocode(key);
-      } catch {
-        place = null;
-      }
-      if (place) {
-        const found = place;
-        apply((d) => (d.places[key] ? { doc: d } : setPlace(d, key, found)));
-      }
-      setPlaceStatus((s) => {
-        const { [key]: _done, ...rest } = s;
-        return place ? rest : { ...rest, [key]: 'missing' };
-      });
-      return place;
-    },
-    [services, apply],
-  );
-
-  /** One lookup per key at a time, whether a mention or a formula asks first. */
+  /**
+   * For formulas. A key that is mentioned somewhere waits for that mention's
+   * (context-biased) lookup instead of starting a second, unbiased one.
+   */
   const resolvePlace = useCallback(
     (key: string): Promise<Place | null> => {
       const known = docRef.current.places[key];
       if (known) return Promise.resolve(known);
-      let pending = inFlight.current.get(key);
-      if (!pending) {
-        pending = lookUp(key).finally(() => inFlight.current.delete(key));
-        inFlight.current.set(key, pending);
-      }
-      return pending;
+      if (statusRef.current[key] === 'missing') return Promise.resolve(null);
+      const wait = new Promise<Place | null>((resolve) => {
+        waiters.current.set(key, [...(waiters.current.get(key) ?? []), resolve]);
+      });
+      if (!mentioned.current.has(key) && !requested.current.has(key)) void lookUp(key);
+      return wait;
     },
     [lookUp],
   );
@@ -147,15 +186,36 @@ export function DocProvider({ children, initialDoc, services: given, storage = s
 
   const contexts = useMemo(() => resolveContexts(viewDoc, today), [viewDoc, today]);
 
+  // Look up mentions top-down: a child waits for its parent's place so the lookup can be biased to it.
   useEffect(() => {
+    const keys = new Set<string>();
+    for (const ctx of contexts.values()) ctx.ownPlaces.forEach((k) => keys.add(k));
+    mentioned.current = keys;
     for (const ctx of contexts.values()) {
+      const parentKey = ctx.inheritedPlaceKey;
+      const parent = parentKey ? viewDoc.places[parentKey] : undefined;
+      const parentSettled = !parentKey || parent || placeStatus[parentKey] === 'missing' || placeStatus[parentKey] === 'error';
       for (const key of ctx.ownPlaces) {
         if (viewDoc.places[key] || requested.current.has(key)) continue;
-        requested.current.add(key);
-        void resolvePlace(key);
+        if (!parentSettled && parentKey !== key) continue;
+        void lookUp(key, parentKey === key ? undefined : parent);
       }
     }
-  }, [contexts, viewDoc.places, resolvePlace]);
+  }, [contexts, viewDoc.places, placeStatus, lookUp, retryTick]);
+
+  // Coming back online retries everything the services couldn't answer.
+  useEffect(() => {
+    const onOnline = () => {
+      for (const [key, status] of Object.entries(statusRef.current)) {
+        if (status !== 'error') continue;
+        attempts.current.delete(key);
+        requested.current.delete(key);
+      }
+      setRetryTick((t) => t + 1);
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
 
   // ---- persistence: debounced save, flush on hide, follow other tabs ----
   const lastWritten = useRef<string | null>(null);

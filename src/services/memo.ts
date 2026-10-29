@@ -1,3 +1,4 @@
+import type { Place } from '../model/types';
 import type { Services } from './types';
 
 /**
@@ -18,7 +19,8 @@ export function memoize(services: Services): Services {
       return hit;
     };
   return {
-    geocode: wrap('geocode', (name: string) => services.geocode(name)),
+    geocode: wrap('geocode', (name: string, near?: Place) => services.geocode(name, near)),
+    search: wrap('search', (query: string, near?: Place) => services.search(query, near)),
     weather: wrap('weather', (p, iso) => services.weather(p, iso)),
     route: wrap('route', (a, b) => services.route(a, b)),
   };

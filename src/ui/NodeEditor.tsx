@@ -3,6 +3,26 @@ import type { Focus, NodeId, ViewKind } from '../model/types';
 import { indent, moveDown, moveUp, outdent, removeOrMerge, setText, setView, splitNode, toggleCollapse } from '../model/ops';
 import { visibleOrder } from '../model/tree';
 import { useStore } from './store';
+import { tokenize } from '../syntax/tokenize';
+
+/** Raw text with tokens coloured; must render character-for-character like the textarea. */
+function Mirror({ text }: { text: string }) {
+  return (
+    <div className="editor-mirror" aria-hidden>
+      {tokenize(text).map((s, i) =>
+        s.kind === 'text' ? (
+          <span key={i}>{s.text}</span>
+        ) : (
+          <span key={i} className={`hl-${s.kind}`}>
+            {s.raw}
+          </span>
+        ),
+      )}
+      {/* keeps a trailing newline from collapsing the last line */}
+      {'\u200b'}
+    </div>
+  );
+}
 
 const VIEW_COMMAND = /(?:^|\s+)\/(map|calendar|table|none)$/;
 
@@ -76,15 +96,18 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   };
 
   return (
-    <textarea
-      ref={ref}
-      className="editor"
-      rows={1}
-      value={text}
-      spellCheck={false}
-      onChange={(e) => apply((d) => setText(d, id, e.target.value))}
-      onKeyDown={onKeyDown}
-      onBlur={() => setFocus((f) => (f?.id === id ? null : f))}
-    />
+    <div className="editor-wrap">
+      <Mirror text={text} />
+      <textarea
+        ref={ref}
+        className="editor"
+        rows={1}
+        value={text}
+        spellCheck={false}
+        onChange={(e) => apply((d) => setText(d, id, e.target.value))}
+        onKeyDown={onKeyDown}
+        onBlur={() => setFocus((f) => (f?.id === id ? null : f))}
+      />
+    </div>
   );
 }

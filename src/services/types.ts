@@ -3,7 +3,14 @@ import type { Route, Weather } from '../formula/values';
 
 /** Everything that touches the network; injected so the pure layers and tests never fetch. */
 export interface Services {
-  geocode(name: string): Promise<Place | null>;
+  /**
+   * Best single match for a mention. `near` (the surrounding bullet's place) biases
+   * landmark lookups. Resolves null only when every source answered "no results";
+   * rejects with TransientError when a source couldn't be reached.
+   */
+  geocode(name: string, near?: Place): Promise<Place | null>;
+  /** Candidates for the @-mention picker. */
+  search(query: string, near?: Place): Promise<Place[]>;
   weather(place: Place, isoDate: string): Promise<Weather>;
   route(from: Place, to: Place): Promise<Route>;
 }

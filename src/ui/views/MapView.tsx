@@ -3,7 +3,7 @@ import L from 'leaflet';
 import type { NodeId } from '../../model/types';
 import { useStore } from '../store';
 import { setHovered, useHovered } from '../hover';
-import { collectPlaces } from './collect';
+import { collectPlaces, unresolvedPlaces } from './collect';
 
 const markerIcon = (index: number, hovered: boolean) =>
   L.divIcon({
@@ -14,7 +14,7 @@ const markerIcon = (index: number, hovered: boolean) =>
   });
 
 export default function MapView({ id }: { id: NodeId }) {
-  const { viewDoc: doc, contexts, setFocus } = useStore();
+  const { viewDoc: doc, contexts, setFocus, placeStatus } = useStore();
   const hovered = useHovered();
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -22,6 +22,9 @@ export default function MapView({ id }: { id: NodeId }) {
   const markers = useRef(new Map<NodeId, { marker: L.Marker; index: number }[]>());
 
   const stops = collectPlaces(doc, contexts, id);
+  const unresolved = unresolvedPlaces(doc, contexts, id);
+  const pending = unresolved.filter((k) => placeStatus[k] !== 'missing');
+  const notFound = unresolved.filter((k) => placeStatus[k] === 'missing');
   const stopsKey = JSON.stringify(stops.map((s) => [s.nodeId, s.place.lat, s.place.lon]));
 
   // Keep latest callbacks reachable from Leaflet handlers without rebuilding markers.
@@ -50,10 +53,9 @@ export default function MapView({ id }: { id: NodeId }) {
     if (!m || !group) return;
     group.clearLayers();
     markers.current.clear();
-    if (stops.length === 0) {
-      m.setView([20, 0], 1);
-      return;
-    }
+    if (stops.length === 0) return;
+    // The container may have just become visible; Leaflet must re-measure it.
+    m.invalidateSize();
     const points = stops.map((s) => L.latLng(s.place.lat, s.place.lon));
     if (points.length > 1) {
       L.polyline(points, { color: '#c2410c', weight: 2.5, dashArray: '6 6', opacity: 0.8 }).addTo(group);
@@ -81,8 +83,14 @@ export default function MapView({ id }: { id: NodeId }) {
 
   return (
     <>
-      <div ref={el} className="map" />
-      {stops.length === 0 && <div className="view-empty">No places found under this bullet yet — mention one like @Lisbon.</div>}
+      <div ref={el} className={`map${stops.length === 0 ? ' is-empty' : ''}`} />
+      {stops.length === 0 && pending.length > 0 && <div className="view-empty">Finding places…</div>}
+      {stops.length === 0 && pending.length === 0 && (
+        <div className="view-empty">No places to show yet — mention one like @Lisbon.</div>
+      )}
+      {notFound.length > 0 && (
+        <div className="view-note">Couldn’t find: {notFound.join(', ')}. Edit the mention and pick a suggestion.</div>
+      )}
     </>
   );
 }

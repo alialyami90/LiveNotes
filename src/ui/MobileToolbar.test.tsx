@@ -14,6 +14,7 @@ function build(items: [string, string][]): Doc {
 }
 
 const services: Services = {
+  search: async () => [],
   geocode: async () => null,
   weather: async () => ({ code: 0, condition: '', icon: '', high: 0, low: 0 }),
   route: async () => ({ seconds: 0, meters: 0 }),

@@ -6,7 +6,7 @@ import type { Services } from '../../services/types';
 import { resolveContexts } from '../../context/resolve';
 import { DocProvider } from '../store';
 import { Outline } from '../Outline';
-import { collectDates, collectPlaces, plainText } from './collect';
+import { collectDates, collectPlaces, plainText, unresolvedPlaces } from './collect';
 
 type Spec = [string, string, Spec[]?, ViewKind?];
 function build(spec: Spec[], places: Doc['places'] = {}): Doc {
@@ -42,6 +42,10 @@ describe('collect', () => {
     ]);
   });
 
+  it('unresolvedPlaces lists mention keys in the subtree that have no coordinates yet', () => {
+    expect(unresolvedPlaces(doc, ctx, 'trip')).toEqual(['atlantis']);
+  });
+
   it('collectDates groups nodes by their own dates, sorted', () => {
     expect([...collectDates(doc, ctx, 'trip')]).toEqual([
       ['2026-11-03', ['a']],
@@ -59,6 +63,7 @@ describe('collect', () => {
 });
 
 const services: Services = {
+  search: async () => [],
   geocode: async () => null,
   weather: async () => ({ code: 0, condition: 'Clear', icon: '☀️', high: 20, low: 10 }),
   route: async () => ({ seconds: 3600, meters: 100000 }),
@@ -77,10 +82,11 @@ function setup(doc: Doc) {
 describe('CalendarView', () => {
   it('renders a November grid with an entry per dated node', () => {
     const { container } = setup(build([['trip', 'Trip', [['a', 'Nov 3 arrive'], ['b', 'Nov 5 leave']], 'calendar']]));
-    const cal = within(container.querySelector<HTMLElement>('[data-view="calendar"]')!);
-    expect(cal.getByText('November 2026')).toBeInTheDocument();
-    expect(cal.getAllByRole('button')).toHaveLength(2);
-    expect(cal.getByRole('button', { name: 'arrive' })).toBeInTheDocument();
+    const view = container.querySelector<HTMLElement>('[data-view="calendar"]')!;
+    expect(within(view).getByText('November 2026')).toBeInTheDocument();
+    const grid = within(view.querySelector<HTMLElement>('.month-grid')!);
+    expect(grid.getAllByRole('button')).toHaveLength(2);
+    expect(grid.getByRole('button', { name: 'arrive' })).toBeInTheDocument();
   });
 
   it('only renders the weeks the dates span', () => {
@@ -94,10 +100,19 @@ describe('CalendarView', () => {
     expect(container.querySelector('[data-view="calendar"] h4')).toHaveTextContent('November – December 2026');
   });
 
+  it('also lists the days as an agenda for narrow screens', () => {
+    const { container } = setup(build([['trip', 'Trip', [['a', 'Nov 3 arrive'], ['b', 'Nov 5 leave'], ['c', 'Nov 5 dinner']], 'calendar']]));
+    const days = container.querySelectorAll('[data-view="calendar"] .agenda li');
+    expect(days).toHaveLength(2);
+    expect(days[0]).toHaveTextContent('Tue, Nov 3');
+    expect(days[0]).toHaveTextContent('arrive');
+    expect(within(days[1] as HTMLElement).getAllByRole('button')).toHaveLength(2);
+  });
+
   it('clicking an entry focuses its node for editing', async () => {
     const { user, container } = setup(build([['trip', 'Trip', [['a', 'Nov 3 arrive']], 'calendar']]));
-    const cal = within(container.querySelector<HTMLElement>('[data-view="calendar"]')!);
-    await user.click(cal.getByRole('button', { name: 'arrive' }));
+    const grid = within(container.querySelector<HTMLElement>('[data-view="calendar"] .month-grid')!);
+    await user.click(grid.getByRole('button', { name: 'arrive' }));
     expect(screen.getByRole('textbox')).toHaveValue('Nov 3 arrive');
   });
 

@@ -6,8 +6,15 @@ import { useFormula } from './useFormula';
 export function PlaceChip({ placeKey, name }: { placeKey: string; name: string }) {
   const { doc, placeStatus } = useStore();
   const place = doc.places[placeKey];
-  const status = place ? 'is-resolved' : placeStatus[placeKey] === 'missing' ? 'is-missing' : 'is-pending';
-  const title = place ? (place.label ?? place.name) : status === 'is-missing' ? 'Place not found' : 'Looking up…';
+  const s = placeStatus[placeKey];
+  const status = place ? 'is-resolved' : s === 'missing' ? 'is-missing' : s === 'error' ? 'is-error' : 'is-pending';
+  const title = place
+    ? (place.label ?? place.name)
+    : status === 'is-missing'
+      ? 'Place not found — edit the mention and pick a suggestion'
+      : status === 'is-error'
+        ? 'Couldn’t reach the place service — retrying'
+        : 'Looking up…';
   return (
     <span className={`chip chip-place ${status}`} title={title}>
       {name}

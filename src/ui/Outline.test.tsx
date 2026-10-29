@@ -5,7 +5,9 @@ import type { Doc, OutlineNode } from '../model/types';
 import type { Services } from '../services/types';
 import { DocProvider, useStore } from './store';
 import { STORAGE_KEY } from '../model/storage';
+import { TransientError } from '../services/http';
 import { ErrorBoundary } from './ErrorBoundary';
+import { App } from './App';
 import { Outline } from './Outline';
 
 function build(items: [string, string][]): Doc {
@@ -15,6 +17,7 @@ function build(items: [string, string][]): Doc {
 }
 
 const services: Services = {
+  search: async () => [],
   geocode: async (name) => (name === 'lisbon' ? { name: 'Lisboa', lat: 38.72, lon: -9.14 } : null),
   weather: async () => ({ code: 0, condition: 'Clear', icon: '☀️', high: 20, low: 10 }),
   route: async () => ({ seconds: 3600, meters: 100000 }),
@@ -199,5 +202,91 @@ describe('ErrorBoundary', () => {
     spy.mockRestore();
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reset to sample/i })).toBeInTheDocument();
+  });
+});
+
+describe('editor highlighting', () => {
+  it('colours mentions, dates and formulas while typing', async () => {
+    const { user, container } = setup(build([['a', 'x']]));
+    await user.click(screen.getByText('x'));
+    await user.keyboard('{End} @Lisbon on Nov 3 {{1 + 1}');
+    const mirror = container.querySelector('.editor-mirror')!;
+    expect(mirror.querySelector('.hl-place')).toHaveTextContent('@Lisbon');
+    expect(mirror.querySelector('.hl-date')).toHaveTextContent('Nov 3');
+    expect(mirror.querySelector('.hl-formula')).toHaveTextContent('{1 + 1}');
+    // the mirror must reproduce the raw text exactly so the caret lines up
+    expect(mirror.textContent!.replace(/​$/, '')).toBe('x @Lisbon on Nov 3 {1 + 1}');
+  });
+});
+
+describe('header menu', () => {
+  it('toggles the actions menu and closes it after an action', async () => {
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={build([['a', 'x']])} services={services} storage={null} today="2026-10-28">
+        <App />
+      </DocProvider>,
+    );
+    const toggle = screen.getByRole('button', { name: 'Menu' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+describe('place lookups', () => {
+  it('retries a place the service could not reach, instead of calling it "not found"', async () => {
+    let calls = 0;
+    const flaky: Services = {
+      ...services,
+      geocode: async (n) => {
+        calls++;
+        if (calls === 1) throw new TransientError('place lookup unavailable');
+        return services.geocode(n);
+      },
+    };
+    render(
+      <DocProvider initialDoc={build([['a', 'Visit @Lisbon']])} services={flaky} storage={null} today="2026-10-28" retryDelaysMs={[10]}>
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveClass('is-error'));
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveAttribute('title', 'Lisboa'));
+    expect(calls).toBe(2);
+  });
+
+  it('looks up a mention near its parent bullet’s place', async () => {
+    const seen: [string, string | undefined][] = [];
+    const biased: Services = {
+      ...services,
+      geocode: async (n, near) => {
+        seen.push([n, near?.name]);
+        return n === 'lisbon' ? { name: 'Lisboa', lat: 38.72, lon: -9.14 } : { name: 'Time Out Market Lisboa', lat: 38.707, lon: -9.146 };
+      },
+    };
+    const doc = build([['p', 'Day in @Lisbon']]);
+    doc.nodes.p.children = ['c'];
+    doc.nodes.c = { id: 'c', text: 'Lunch at @[Time Out Market]', children: [] };
+    render(
+      <DocProvider initialDoc={doc} services={biased} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Time Out Market')).toHaveAttribute('title', 'Time Out Market Lisboa'));
+    expect(seen).toEqual([['lisbon', undefined], ['time out market', 'Lisboa']]);
+  });
+
+  it('a formula waits for its mention to resolve rather than looking it up again', async () => {
+    const seen: string[] = [];
+    const counting: Services = { ...services, geocode: async (n, near) => { seen.push(n); return services.geocode(n, near); } };
+    render(
+      <DocProvider initialDoc={build([['a', 'Visit @Lisbon {here.name}']])} services={counting} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    expect(await screen.findByText('Lisboa', { selector: '.chip-formula' })).toBeInTheDocument();
+    expect(seen).toEqual(['lisbon']);
   });
 });
