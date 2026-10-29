@@ -6,6 +6,7 @@ export function plainText(text: string, { dates = true } = {}): string {
     .map((s) => {
       if (s.kind === 'text') return displayText(s.text);
       if (s.kind === 'place') return s.name;
+      if (s.kind === 'weather') return s.raw;
       if (s.kind === 'date') return dates ? s.raw : '';
       return '';
     })

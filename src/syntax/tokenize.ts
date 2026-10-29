@@ -1,10 +1,14 @@
 import { parseDateAt } from './dates';
+import { PHRASE_ESCAPE, recognizePhrases, type Mode } from './phrases';
 
 export type Segment =
-  | { kind: 'text'; text: string }
+  | { kind: 'text'; text: string; mode?: Mode } // mode: a recognised route's mode word
   | { kind: 'place'; key: string; name: string; raw: string }
   | { kind: 'date'; raw: string; month: number; day: number; year?: number }
-  | { kind: 'formula'; source: string; raw: string };
+  | { kind: 'formula'; source: string; raw: string }
+  | { kind: 'weather'; raw: string }
+  // Sits right after the destination place; zero-width so raw/text still round-trips.
+  | { kind: 'route'; mode: Mode; fromKey?: string; toKey: string; raw: '' };
 
 export function placeKey(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -39,7 +43,7 @@ export function placeAt(text: string, i: number): { name: string; end: number } 
 
 /** Text segments keep escapes so raw text round-trips; this is what readers see. */
 export function displayText(text: string): string {
-  return text.replace(/\\([@{])/g, '$1');
+  return text.replace(/\\([@{])/g, '$1').replace(PHRASE_ESCAPE, '');
 }
 
 /** Splits node text into segments; concatenating every `raw`/`text` reproduces the input. */
@@ -90,5 +94,5 @@ export function tokenize(text: string): Segment[] {
     i++;
   }
   flush();
-  return out;
+  return recognizePhrases(out);
 }

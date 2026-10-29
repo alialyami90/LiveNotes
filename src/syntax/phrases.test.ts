@@ -1,0 +1,174 @@
+import { describe, expect, it } from 'vitest';
+import { MODES, insertModeWord, modeOf, routeWithoutMode, type Mode } from './phrases';
+import { displayText, tokenize, type Segment } from './tokenize';
+
+const raw = (s: Segment) => (s.kind === 'text' ? s.text : s.raw);
+const roundTrip = (t: string) => tokenize(t).map(raw).join('');
+const kinds = (t: string) => tokenize(t).map((s) => s.kind);
+
+const WORDS: [string, Mode][] = [
+  ['drive', 'drive'], ['driving', 'drive'], ['car', 'drive'], ['taxi', 'drive'],
+  ['walk', 'walk'], ['walking', 'walk'],
+  ['transit', 'transit'], ['train', 'transit'], ['bus', 'transit'], ['metro', 'transit'], ['tram', 'transit'],
+  ['bike', 'bike'], ['cycle', 'bike'], ['cycling', 'bike'],
+  ['fly', 'fly'], ['flight', 'fly'],
+];
+
+describe('MODES / modeOf', () => {
+  it('lists the popup rows in fixed order with icons', () => {
+    expect(MODES.map((m) => [m.mode, m.word, m.label, m.icon])).toEqual([
+      ['drive', 'drive', 'Drive', '🚗'],
+      ['walk', 'walk', 'Walk', '🚶'],
+      ['transit', 'transit', 'Public transport', '🚆'],
+      ['bike', 'bike', 'Bike', '🚲'],
+      ['fly', 'fly', 'Fly', '✈'],
+    ]);
+  });
+  it('maps every mode word, case-insensitively', () => {
+    for (const [w, m] of WORDS) {
+      expect(modeOf(w)).toBe(m);
+      expect(modeOf(w.toUpperCase())).toBe(m);
+    }
+    expect(modeOf('carefully')).toBeUndefined();
+    expect(modeOf('to')).toBeUndefined();
+  });
+});
+
+describe('weather words', () => {
+  it('weather and forecast become weather segments, raw preserved', () => {
+    expect(tokenize('weather')).toEqual([{ kind: 'weather', raw: 'weather' }]);
+    expect(tokenize('Weather')).toEqual([{ kind: 'weather', raw: 'Weather' }]);
+    expect(tokenize('FORECAST')).toEqual([{ kind: 'weather', raw: 'FORECAST' }]);
+    expect(tokenize('Lunch, weather?')).toEqual([
+      { kind: 'text', text: 'Lunch, ' },
+      { kind: 'weather', raw: 'weather' },
+      { kind: 'text', text: '?' },
+    ]);
+  });
+  it('is not a phrase when part of a word, escaped or inside a formula', () => {
+    expect(kinds('weathered')).toEqual(['text']);
+    expect(kinds('unweather')).toEqual(['text']);
+    expect(kinds('\\weather')).toEqual(['text']);
+    expect(kinds('{weather()}')).toEqual(['formula']);
+  });
+});
+
+describe('route phrases', () => {
+  for (const [word, mode] of WORDS) {
+    it(`${word} to @Porto is a ${mode} route`, () => {
+      const t = `${word} to @Porto`;
+      expect(tokenize(t)).toEqual([
+        { kind: 'text', text: word, mode },
+        { kind: 'text', text: ' to ' },
+        { kind: 'place', key: 'porto', name: 'Porto', raw: '@Porto' },
+        { kind: 'route', mode, toKey: 'porto', raw: '' },
+      ]);
+      expect(roundTrip(t)).toBe(t);
+    });
+  }
+
+  it('from X to Y carries both keys, after the destination', () => {
+    const t = 'drive from @Lisbon to @Porto';
+    expect(tokenize(t)).toEqual([
+      { kind: 'text', text: 'drive', mode: 'drive' },
+      { kind: 'text', text: ' from ' },
+      { kind: 'place', key: 'lisbon', name: 'Lisbon', raw: '@Lisbon' },
+      { kind: 'text', text: ' to ' },
+      { kind: 'place', key: 'porto', name: 'Porto', raw: '@Porto' },
+      { kind: 'route', mode: 'drive', fromKey: 'lisbon', toKey: 'porto', raw: '' },
+    ]);
+    expect(roundTrip(t)).toBe(t);
+  });
+
+  it('is case-insensitive and accepts bracket places', () => {
+    const segs = tokenize('Drive To @[São Bento]');
+    expect(segs.map((s) => s.kind)).toEqual(['text', 'text', 'place', 'route']);
+    expect(segs[0]).toMatchObject({ text: 'Drive', mode: 'drive' });
+    expect(segs[3]).toMatchObject({ kind: 'route', toKey: 'são bento' });
+  });
+
+  it('keeps text around the phrase and finds two routes in one bullet', () => {
+    const t = 'Nov 3 drive to @A, then walk to @B';
+    const segs = tokenize(t);
+    expect(segs.map((s) => (s.kind === 'route' ? `route:${s.mode}:${s.toKey}` : s.kind))).toEqual([
+      'date', 'text', 'text', 'text', 'place', 'route:drive:a', 'text', 'text', 'text', 'place', 'route:walk:b',
+    ]);
+    expect(roundTrip(t)).toBe(t);
+  });
+
+  it('round-trips with other chips around the phrase', () => {
+    const t = 'walk to @Porto {weather()} weather';
+    expect(roundTrip(t)).toBe(t);
+  });
+
+  const NOT_ROUTES = [
+    'drive carefully',
+    'to @Porto',
+    'into @Porto',
+    'next to @Porto',
+    'drive\nto @Porto',
+    'drive to \\@Porto',
+    '\\drive to @Porto',
+    'drive from @A\nto @B',
+    'drive from @A and @B',
+    'barcelona to @Porto',
+  ];
+  for (const t of NOT_ROUTES) {
+    it(`${JSON.stringify(t)} is not a route`, () => {
+      expect(kinds(t)).not.toContain('route');
+      expect(roundTrip(t)).toBe(t);
+    });
+  }
+
+  it('does not mark a mode word that is not in a route', () => {
+    expect(tokenize('drive carefully')).toEqual([{ kind: 'text', text: 'drive carefully' }]);
+  });
+});
+
+describe('routeWithoutMode', () => {
+  it('finds where a mode word goes after "to <place>" and a trailing char', () => {
+    expect(routeWithoutMode('go to @Porto ', 12)).toEqual({ at: 3 });
+    expect(routeWithoutMode('to @[São Bento]', 15)).toEqual({ at: 0 });
+    expect(routeWithoutMode('from @A to @B,', 14)).toEqual({ at: 0 });
+  });
+  it('is null when a mode is already there', () => {
+    expect(routeWithoutMode('drive to @Porto ', 16)).toBeNull();
+    expect(routeWithoutMode('drive from @A to @B ', 20)).toBeNull();
+  });
+  it('is null for next/close/near to', () => {
+    expect(routeWithoutMode('next to @Porto ', 15)).toBeNull();
+    expect(routeWithoutMode('close to @X ', 12)).toBeNull();
+    expect(routeWithoutMode('near to @X ', 11)).toBeNull();
+  });
+  it('is null when more was typed, or the caret is inside the mention', () => {
+    expect(routeWithoutMode('to @Porto x', 11)).toBeNull();
+    expect(routeWithoutMode('to @Porto', 6)).toBeNull();
+    expect(routeWithoutMode('to @[São Be', 11)).toBeNull();
+  });
+  it('is null without a whole-word "to" on the same line', () => {
+    expect(routeWithoutMode('visit @Porto ', 13)).toBeNull();
+    expect(routeWithoutMode('into @Porto ', 12)).toBeNull();
+    expect(routeWithoutMode('to\n@Porto ', 10)).toBeNull();
+    expect(routeWithoutMode('go\nto @Porto ', 13)).toEqual({ at: 3 });
+  });
+});
+
+describe('insertModeWord', () => {
+  it('inserts the word and moves a caret at or after the insertion', () => {
+    expect(insertModeWord('go to @Porto ', 3, 'walk', 12)).toEqual({ text: 'go walk to @Porto ', caret: 17 });
+  });
+  it('leaves a caret before the insertion point alone', () => {
+    expect(insertModeWord('go to @Porto ', 3, 'fly', 1)).toEqual({ text: 'go fly to @Porto ', caret: 1 });
+  });
+});
+
+describe('displayText with phrase escapes', () => {
+  it('hides a backslash before a whole phrase word', () => {
+    expect(displayText('\\weather and \\drive')).toBe('weather and drive');
+    expect(displayText('\\Forecast \\train')).toBe('Forecast train');
+  });
+  it('keeps other backslashes', () => {
+    expect(displayText('\\weathered \\x')).toBe('\\weathered \\x');
+    expect(displayText('mail \\@home \\{x}')).toBe('mail @home {x}');
+  });
+});

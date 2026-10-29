@@ -8,6 +8,10 @@ describe('plainText', () => {
   it('drops formulas', () => {
     expect(plainText('Lunch {weather()} at noon')).toBe('Lunch at noon');
   });
+  it('keeps the weather word and drops the route chip, so notes read as written', () => {
+    expect(plainText('Lunch weather')).toBe('Lunch weather');
+    expect(plainText('drive to @Porto')).toBe('drive to Porto');
+  });
   it('keeps dates by default and drops them with dates:false', () => {
     expect(plainText('Nov 5 dinner')).toBe('Nov 5 dinner');
     expect(plainText('Nov 5 dinner', { dates: false })).toBe('dinner');
