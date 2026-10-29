@@ -296,8 +296,8 @@ Soft rectangles that get rounder as they get smaller and more tappable.
   Picker rows and map marker tooltips show the same icon.
 - **Phrase chips:** weather and travel results are formula chips (green). A weather word
   is replaced by its chip (`⛅ 22° / 14°`). A travel chip follows the destination and
-  starts with the mode icon: `🚗 3h 05m · 313 km`, `🚶 ≈ 1h 10m · 5.8 km`,
-  `🚲 ≈ 25 min · 6.1 km`, `🚆 313 km · Directions ↗`, `✈ 503 km`. "≈" marks an estimate.
+  starts with the mode icon: `🚗 3h 05m · 313 km`, `🚶 ≈ 1h 13m · 5.8 km`,
+  `🚲 ≈ 24 min · 6.1 km`, `🚆 313 km · Directions ↗`, `✈ 503 km`. "≈" marks an estimate.
 - **Directions link** (`.chip-link`): inside the transit chip, in the chip's own ink,
   underlined with a 2px offset. On touch its `::before` makes a 44px-tall hit area
   without changing the chip's line box.

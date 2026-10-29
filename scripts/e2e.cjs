@@ -345,7 +345,7 @@ async function phraseShots(page, device, scheme) {
   await airportUnderBarcelona(page, device === 'phone');
   await shot(page, `${device}-picker-${scheme}.png`);
   const rows = await pickerRows(page);
-  assert(rows[1] === '--Elsewhere', rows.join(' | '));
+  assert(rows[0] === '✈️ Barcelona–El Prat Josep Tarradellas Airport' && rows[1] === '--Elsewhere', rows.join(' | '));
   await press(page, 'Escape', 'Escape');
   await back(page);
   return rows.join(' | ');

@@ -5,9 +5,15 @@ the way of working that kept quality high so far. `CLAUDE.md` is the
 engineering spec and working agreement; this file is the "where we are and how
 we work" layer on top of it.
 
-Last updated: 2026-10-29, at Task 8 of the natural-phrases plan: commit
-`f491d5f` (browser and live checks), then the docs commit that updates this
-file. Both are integrated onto branch `ccr-0140cca5-y52lpq` by cherry-pick.
+Last updated: 2026-10-29, written for the state once Task 8 of the
+natural-phrases plan (browser checks, live checks, docs and its fix round) is
+integrated onto branch `ccr-0140cca5-y52lpq` and pushed.
+
+**Not done yet:**
+
+- the final whole-branch review of the natural-phrases work, and its fix wave
+- a CI run (Android APK and `live-check.yml`) on the pushed branch: not yet
+  confirmed green
 
 ---
 
@@ -44,7 +50,8 @@ Spec (approved by the owner):
 `docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`.
 Plan: `docs/superpowers/plans/2026-10-29-natural-phrases-and-area-search.md`.
 Ledger: `.superpowers/sdd/2026-10-29-natural-phrases-and-area-search/progress.md`.
-All 8 tasks are done, each reviewed (Tasks 1, 4, 6 and 7 after one fix round).
+All 8 tasks are implemented and passed their per-task reviews (Tasks 1, 4, 6, 7
+and 8 after one fix round). The final whole-branch review has not run yet.
 
 What shipped (CLAUDE.md §3.2, §4.3, §5, §6, §7 describe it):
 
@@ -71,7 +78,7 @@ What shipped (CLAUDE.md §3.2, §4.3, §5, §6, §7 describe it):
   stubs model Photon's `bbox`, `osm_key`/`osm_value`/`extent` and Open-Meteo's
   population and feature codes.
 
-Verification at `f491d5f` plus the docs commit (Task 8):
+Local verification at the end of Task 8 (its worktree, before integration):
 
 - typecheck clean
 - **713** unit/UI tests pass (12 live tests skipped); the only noise is the
@@ -79,20 +86,22 @@ Verification at `f491d5f` plus the docs commit (Task 8):
 - build OK
 - the browser check passes **75/75** (57 earlier plus 18 new) on desktop and
   Pixel 7, light and dark
-- CI (APK and live check) not yet run for this feature: it runs once the branch
-  is pushed
+- the live checks have never run against the real APIs; their first run is
+  the CI run on the pushed branch
 
 ### Next steps, in order
 
-1. **Final whole-branch review** on the most capable model, against the spec
+1. **Confirm CI on the pushed branch:** the Android APK workflow and
+   `live-check.yml` (its new cases: an airport among the inside rows near
+   Barcelona, a cafe near Lisbon, Photon's extent order). Read the live-check
+   logs: they print the rows Photon returned.
+2. **Final whole-branch review** on the most capable model, against the spec
    and the plan (base `207fd08`). Ask it to trace the geocode transient paths
-   and the popup's arm/dismiss rules. Then one fix round and a scoped
+   and the popup's arm/dismiss rules. Then one fix wave and a scoped
    re-review. The ledger lists the deferred minors to weigh.
-2. Push, and confirm both workflows are green: the Android APK and
-   `live-check.yml` (its new cases: airport near Barcelona, cafe near Lisbon,
-   Photon extent order).
-3. Raise the open owner items in §5.
-4. `superpowers:finishing-a-development-branch`.
+3. Run the gate and the browser check again, push, and confirm CI again.
+4. Raise the open owner items in §5.
+5. `superpowers:finishing-a-development-branch`.
 
 ---
 

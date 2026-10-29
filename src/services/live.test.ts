@@ -94,14 +94,19 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices',
     expect(results.length).toBeGreaterThan(0);
   }, 60_000);
 
-  it('area search: "airport" under Barcelona is an aerodrome inside the area, first', async () => {
+  it('area search: "airport" under Barcelona lists an aerodrome among the inside rows', async () => {
     const barcelona = (await s.geocode('barcelona'))!;
     console.log('[app] barcelona', JSON.stringify(barcelona));
     const results = await s.search('airport', barcelona);
-    console.log('[app] search airport near barcelona', results.map((r) => `${r.name} (${r.kind}${r.elsewhere ? ', elsewhere' : ''})`).join(' ; '));
-    expect(results[0]?.kind).toBe('airport');
-    expect(results[0]?.elsewhere).toBeUndefined();
-    expect(inArea(results[0], areaOf(barcelona))).toBe(true);
+    console.log(
+      '[app] search airport near barcelona',
+      results.map((r) => `${r.name} (${r.kind}${r.elsewhere ? ', elsewhere' : ''}) ${r.lat},${r.lon}`).join(' ; '),
+    );
+    // Inside rows are ordered by distance from the city centre, not relevance: an "Aeroport"
+    // metro stop or an airport hotel can come before the aerodrome itself.
+    const inside = results.filter((r) => !r.elsewhere);
+    const box = areaOf(barcelona);
+    expect(inside.some((r) => r.kind === 'airport' && inArea(r, box)), 'no in-area airport among the inside rows').toBe(true);
   }, 60_000);
 
   it('area search: "cafe" near Lisbon finds a place of kind cafe', async () => {
@@ -112,7 +117,17 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices',
   }, 60_000);
 
   it('a Photon city has a valid extent once reordered to [west, south, east, north]', async () => {
-    const res = await fetch('https://photon.komoot.io/api/?q=barcelona&limit=3&lang=en&osm_tag=place:city', { headers: { Referer: 'https://localhost/' } });
+    // Photon throttles bursts (CLAUDE.md §5), and the tests above just used it: pause, retry once.
+    const url = 'https://photon.komoot.io/api/?q=barcelona&limit=3&lang=en&osm_tag=place:city';
+    const get = () => fetch(url, { headers: { Referer: 'https://localhost/' } });
+    await sleep(1500);
+    let res = await get();
+    if (!res.ok) {
+      console.log('[photon] barcelona first try', res.status);
+      await sleep(3000);
+      res = await get();
+    }
+    expect(res.ok, `photon answered ${res.status}`).toBe(true);
     const data = (await res.json()) as { features: { geometry: { coordinates: [number, number] }; properties: Record<string, unknown> }[] };
     const city = data.features.find((f) => f.properties.extent);
     console.log('[photon] barcelona', res.status, JSON.stringify(city?.properties), city?.geometry.coordinates);

@@ -311,8 +311,8 @@ Property access: `route(a,b).duration`, `weather().high`, `here.name`.
 | Mode | Distance | Time | Chip |
 |---|---|---|---|
 | drive | OSRM route | OSRM route | `🚗 3h 05m · 313 km` |
-| walk | OSRM route | distance ÷ 4.8 km/h, marked ≈ | `🚶 ≈ 1h 10m · 5.8 km` |
-| bike | OSRM route | distance ÷ 15 km/h, marked ≈ | `🚲 ≈ 25 min · 6.1 km` |
+| walk | OSRM route | distance ÷ 4.8 km/h, marked ≈ | `🚶 ≈ 1h 13m · 5.8 km` |
+| bike | OSRM route | distance ÷ 15 km/h, marked ≈ | `🚲 ≈ 24 min · 6.1 km` |
 | transit | OSRM route | none | `🚆 313 km · Directions ↗` |
 | fly | great circle, no network | none | `✈ 503 km` |
 
@@ -388,13 +388,13 @@ is.
 3. Otherwise ask Photon inside the area (`bbox`, limit 5) and use its best
    result that is not a street. So `@airport` under `@Barcelona` is
    Barcelona–El Prat, not a town called "Airport".
-4. Otherwise use the town if it is within 75 km of the parent, but only once
-   the area stage actually answered.
+4. Otherwise use the town if it is within 75 km of the parent, but only if
+   the area stage did not fail transiently.
 5. Otherwise ask Photon worldwide, biased to the parent place, and use its top
    result unless it is a street and there is a town. This still runs when the
    area stage failed.
-6. Otherwise use the far town, but only once both Photon stages actually
-   answered.
+6. Otherwise use the far town, but only if neither Photon stage failed
+   transiently.
 7. Otherwise return `null` when every source answered with nothing, or throw
    (`TransientError` if any failure was transient).
 
@@ -413,7 +413,7 @@ Both Photon stages go on the interactive queue. `search` rejects only when
 every stage failed. The merge lives in `rank.ts` (`mergeSearch`):
 
 - **No parent place:** major cities, the other towns, then landmarks, in one
-  list.
+  list of at most 8 rows.
 - **With a parent place:**
   1. Inside the area: settlements and named places before streets, then
      nearest first.
@@ -533,7 +533,8 @@ a marker or entry highlights the row.
       the bullet's inherited place's area (at most 8), then a non-interactive
       **Elsewhere** divider and the rows outside it (at most 8). The divider
       shows only with a parent place, a row before it and a row after it.
-      Remote rows within 2 km of a saved row are dropped.
+      With no parent place there is one list, capped at 8 rows. Remote rows
+      within 2 km of a saved row are dropped.
 
     Each row starts with its place-kind icon. Tap, or `↑`/`↓` then
     `Enter`/`Tab`, inserts `@Name` (or `@[Name]`) and stores that exact place
