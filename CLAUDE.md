@@ -23,7 +23,7 @@ Embark adds three primitives to a plain text outline:
 | Primitive | What it is | Embark example | LiveNotes form |
 |---|---|---|---|
 | **Mentions** | Inline references to structured data that live inside free text | A place ("Lisbon") or a date ("Nov 3") | `@Lisbon`, `@[São Bento Station]`, and auto-detected dates such as `Nov 3` or `2026-11-03` |
-| **Formulas** | Spreadsheet-like expressions that run inside the outline, read from it, and pull in live data. Their results feed further calculations | Weather forecast for a day, route and travel time between two stops | `{weather()}`, `{route(prev, here)}`, `{distance(@Lisbon, @Porto) * 2}` |
+| **Formulas** | Spreadsheet-like expressions that run inside the outline, read from it, and pull in live data. Their results feed further calculations | Weather forecast for a day, route and travel time between two stops | `{weather()}`, `{route(prev, here)}`, `{distance(@Lisbon, @Porto) * 2}`, and plain-word phrases that run as formulas: `weather`, `drive to @Porto`, `walk from @A to @B` (§3.2) |
 | **Views** | Rich renderings (map, calendar, …) of **any subtree**, shown inline in the document | A map of every place in "Day 2"; a calendar of the whole trip | Per-node `view: map \| calendar \| table`, rendered under the node |
 
 Principles we take from Embark:
@@ -112,16 +112,22 @@ src/
               LibraryProvider.tsx (React: index state, undo delete)
   model/      types.ts  tree.ts (parent index, traversal)  ops.ts (pure edits)
               storage.ts (validate, load/save)  sample.ts (seed trip doc)
-  syntax/     tokenize.ts (text → segments, escapes)  dates.ts (date recognition)
-              mention.ts (mention under the caret)  plain.ts (chips → plain text)
+  syntax/     scan.ts (places, dates, formulas, escapes)  phrases.ts (weather words, route
+              phrases, MODES, routeWithoutMode)  tokenize.ts (scan + phrases, displayText)
+              dates.ts (date recognition)  mention.ts (mention under the caret)
+              plain.ts (chips → plain text)
   context/    resolve.ts (effective place/date per node, dayNumber)
   formula/    lexer.ts  parser.ts  evaluate.ts  values.ts  format.ts
-  services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts  memo.ts
+              travel.ts (travel built-in, Directions URL, phrase → formula source)
+  services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts (haversine, areaOf)
+              rank.ts (picker merge, near/major rules)  kinds.ts (place kinds, icons)  memo.ts
   platform/   export.ts (download on web, share sheet on Android)
   ui/         store.tsx (DocProvider: state, focus, frozen viewDoc)
               usePlaceLookups.ts (top-down geocoding, retries)  usePersistence.ts
               ErrorBoundary.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx
-              PlacePicker.tsx  usePlaceSearch.ts  MobileToolbar.tsx  useMenu.ts (shared ⋯ menus)
+              PlacePicker.tsx (+ PlacePicker.test.tsx)  usePlaceSearch.ts
+              ModePicker.tsx  useModePicker.ts (travel-mode popup)
+              MobileToolbar.tsx  useMenu.ts (shared ⋯ menus)
               RichText.tsx  Chips.tsx  NodeMenu.tsx  hover.ts  useFormula.ts
               views/ViewHost.tsx  views/collect.ts  views/MapView.tsx (lazy)
               views/CalendarView.tsx  views/TableView.tsx
@@ -150,7 +156,11 @@ interface OutlineNode {
   view?: ViewKind;       // a view renders this node's subtree
 }
 
-interface Place { name: string; lat: number; lon: number; label?: string }
+interface Place {
+  name: string; lat: number; lon: number; label?: string;
+  kind?: PlaceKind;                          // for the icon (§5); absent on older places
+  extent?: [number, number, number, number]; // [west, south, east, north], when the map data has one
+}
 
 interface Doc {
   version: 1;
@@ -166,21 +176,54 @@ interface Doc {
 - `places` is a resolution cache that lives *in the document*. Resolved mentions
   therefore survive reloads and work offline. A later "re-pick location" UI only
   has to overwrite one entry.
+- `kind` and `extent` are optional, so `version` stays 1. Places saved before
+  they existed show 📍. Nothing is looked up just to fill them in; re-picking a
+  place updates it. An unknown `kind` from an imported file shows 📍, and a
+  malformed `extent` falls back to the 30 km box (§5).
 
 ### 3.2 Inline syntax (`syntax/tokenize.ts`)
 
-`tokenize(text) → Segment[]`, where `Segment` is one of the following:
+`tokenize(text) → Segment[]` is `recognizePhrases(scan(text))`. `scan.ts` finds
+places, dates, formulas and escapes; `phrases.ts` then finds phrases in the text
+segments. `Segment` is one of the following:
 
 | Segment | Source syntax | Notes |
 |---|---|---|
-| `text` | anything else | |
+| `text` | anything else | A recognised route's mode word is a `text` segment with a `mode` field, so every reader still treats it as text. |
 | `place` | `@Word` or `@[Multi Word Name]` | `@Word` stops at whitespace or punctuation. The key is lowercased and trimmed. |
 | `date` | `2026-11-03`, `Nov 3`, `3 Nov`, `November 3, 2026`, `Nov 3 2026` | Without a year, the year is inferred in `context/` (§3.3). |
 | `formula` | `{ … }` | Braces nest-count. An unclosed `{` is plain text. |
-| escape | `\@`, `\{` | Stays literal text (backslash hidden when rendered by `displayText`). |
+| `weather` | `weather` or `forecast` | Runs as `weather()` (§4.3). |
+| `route` | a mode word, then `to @X` or `from @A to @B` | Zero-width (`raw: ''`), placed right after the destination place. Carries `mode`, `toKey` and, for "from", `fromKey`. |
+| escape | `\@`, `\{`, and `\` before a phrase word (`\weather`, `\drive`) | Stays literal text (backslash hidden when rendered by `displayText`). A backslash inside a word (`C:\Docs\train`) is kept. |
 
-Text inside `{…}` is formula source and is **not** scanned for date mentions.
-Inside a formula, `@Name` is a place literal.
+Concatenating every `raw`/`text` reproduces the input.
+
+Text inside `{…}` is formula source and is **not** scanned for date mentions or
+phrases. Inside a formula, `@Name` is a place literal.
+
+**Phrases** (`phrases.ts`):
+
+- Mode words (the first is what the popup writes):
+
+  | Mode | Words | Popup row |
+  |---|---|---|
+  | `drive` | drive, driving, car, taxi | 🚗 Drive |
+  | `walk` | walk, walking | 🚶 Walk |
+  | `transit` | transit, train, bus, metro, tram | 🚆 Public transport |
+  | `bike` | bike, cycle, cycling | 🚲 Bike |
+  | `fly` | fly, flight | ✈ Fly |
+
+- Phrase words match whole words, in any case. They never match inside URLs,
+  emails or compounds (`weather.com`, `ali@weather.com`, `weather-proof`,
+  `weather_report`). Sentence punctuation (`weather.`, `(weather)`) still
+  matches.
+- The spaces inside a phrase never cross a line break: `drive\nto @Porto` is
+  not a route.
+- `to @X` with no mode word is plain text and shows no route. So is a mode word
+  that isn't directly before `to`/`from` ("drive carefully").
+- `plainText` keeps the weather word and drops route segments, so calendar
+  labels and previews read as written.
 
 ### 3.3 Context inheritance (`context/resolve.ts`)
 
@@ -206,7 +249,8 @@ This makes the following work:
 
 `prev` is the effective place of the **previous sibling**, or the parent's place
 when the node is the first child. That gives "how do I get here from the last
-stop" without explicit references.
+stop" without explicit references. A route phrase without "from"
+(`drive to @Porto`) starts from `prev` too.
 
 ---
 
@@ -254,11 +298,45 @@ chips with the message in a tooltip.
 | `today` | current date |
 | `weather(place = here, date = date)` | daily forecast: condition, high, low. Uses Open-Meteo, which covers about 16 days ahead. Further out, the error says "no forecast yet". |
 | `route(from, to)` | driving route via OSRM: `.duration`, `.distance`. Displays "3h 05m · 313 km". |
+| `travel(mode, from, to)` | a journey in one mode: `"drive"`, `"walk"`, `"transit"`, `"bike"` or `"fly"` (canonical names only; synonyms like "car" are for prose). `.distance`, and `.duration` where there is a time. See the table below. |
 | `distance(a, b)` | great-circle distance (haversine) |
 | `days(a, b)` | whole days between two dates |
 | `hours(x)`, `minutes(x)`, `km(x)` | unit conversion to a plain number |
 
 Property access: `route(a,b).duration`, `weather().high`, `here.name`.
+
+**`travel` (`formula/travel.ts`).** It returns a `travel` value
+`{ mode, meters, seconds?, estimated, directionsUrl? }`:
+
+| Mode | Distance | Time | Chip |
+|---|---|---|---|
+| drive | OSRM route | OSRM route | `🚗 3h 05m · 313 km` |
+| walk | OSRM route | distance ÷ 4.8 km/h, marked ≈ | `🚶 ≈ 1h 10m · 5.8 km` |
+| bike | OSRM route | distance ÷ 15 km/h, marked ≈ | `🚲 ≈ 25 min · 6.1 km` |
+| transit | OSRM route | none | `🚆 313 km · Directions ↗` |
+| fly | great circle, no network | none | `✈ 503 km` |
+
+- Walk and bike reuse the driving distance, because the free OSRM server only
+  routes cars. Over 100 km they give the errors "too far to walk" and "too far
+  to cycle".
+- Transit's chip ends in a "Directions ↗" link:
+  `https://www.google.com/maps/dir/?api=1&origin=<lat>,<lon>&destination=<lat>,<lon>&travelmode=transit`.
+  It is a plain link, with no key and no API call.
+- `.duration` on transit or fly is the error "no time for transit" / "no time
+  for fly".
+
+**Phrases run as formulas.** `phraseSource` turns a phrase into the formula it
+stands for, and the chip's hover title shows it:
+
+| Phrase | Formula |
+|---|---|
+| `weather`, `forecast` | `weather()` |
+| `walk to @Porto` | `travel("walk", prev, @[porto])` |
+| `drive from @Lisbon to @Porto` | `travel("drive", @[lisbon], @[porto])` |
+
+So pending chips, error chips, memoising and waiting for a mention's lookup all
+work as they do for formulas. An undated `weather` shows the error chip "no date
+here", and one without a place shows "no place here".
 
 ### 4.4 Evaluation
 
@@ -276,45 +354,102 @@ Property access: `route(a,b).duration`, `weather().high`, `here.name`.
 
 ```ts
 interface Services {
-  geocode(name: string, near?: Place): Promise<Place | null>; // best match for a mention
-  search(query: string, near?: Place): Promise<Place[]>;      // candidates for the @ picker
+  geocode(name: string, near?: Place): Promise<Place | null>;              // best match for a mention
+  search(query: string, near?: Place, opts?: SearchOptions): Promise<Found[]>; // candidates for the @ picker
   weather(p: Place, isoDate: string): Promise<Weather>;
   route(a: Place, b: Place): Promise<Route>;
 }
+type Found = Place & { elsewhere?: true };  // outside the parent's area; never stored
+interface SearchOptions { signal?: AbortSignal; onUpdate?: (found: Found[]) => void }
 ```
 
 | Service | Endpoint (all free, no API key) |
 |---|---|
 | Towns and cities | `https://geocoding-api.open-meteo.com/v1/search?name=…&count=…&language=en` (GeoNames, ranked by population, so "lisbon" is Lisbon, Portugal, not Lisbon, Iowa) |
-| Landmarks | `https://photon.komoot.io/api/?q=…&limit=…&lang=en[&lat=…&lon=…]` (OSM-based, finds points of interest; biased toward the parent bullet's place) |
+| Landmarks | `https://photon.komoot.io/api/?q=…&limit=…&lang=en[&lat=…&lon=…][&bbox=w,s,e,n]` (OSM-based, finds points of interest; biased toward the parent bullet's place, or limited to its area with `bbox`) |
 | Weather | `https://api.open-meteo.com/v1/forecast?latitude&longitude&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date&end_date` |
 | Routing | `https://router.project-osrm.org/route/v1/driving/{lon,lat};{lon,lat}?overview=full&geometries=geojson` |
 | Map tiles | `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, with OSM attribution shown |
 
+**The parent's area** (`geo.ts` `areaOf`). The parent place is the bullet's
+inherited place. Its area is its `extent` when that is a valid box, else a box
+reaching 30 km from it in each direction. A large extent (a country) is used as
+is.
+
 **How a mention is resolved (`geocode`).**
 
-1. Ask Open-Meteo for the top match.
-2. Use that match if any of these hold:
+1. Ask Open-Meteo for the top match. If Open-Meteo fails transiently, nothing
+   is guessed: `geocode` throws `TransientError` and the lookup retries.
+2. Use that town if any of these hold:
    - there is no parent place
-   - it is within 75 km of the parent bullet's place
    - it is a major city (population ≥ 100k), so `@Dammam` under Riyadh means
      the city, not a local namesake (a live check found exactly this)
-3. Otherwise ask Photon, biased to the parent place. A Photon street
-   (`osm_key=highway`) never beats a town. The far Open-Meteo match is used
-   only once Photon has actually answered.
+   - it lies inside the parent's area
+3. Otherwise ask Photon inside the area (`bbox`, limit 5) and use its best
+   result that is not a street. So `@airport` under `@Barcelona` is
+   Barcelona–El Prat, not a town called "Airport".
+4. Otherwise use the town if it is within 75 km of the parent, but only once
+   the area stage actually answered.
+5. Otherwise ask Photon worldwide, biased to the parent place, and use its top
+   result unless it is a street and there is a town. This still runs when the
+   area stage failed.
+6. Otherwise use the far town, but only once both Photon stages actually
+   answered.
+7. Otherwise return `null` when every source answered with nothing, or throw
+   (`TransientError` if any failure was transient).
 
-`search` merges both sources in this order:
+For ranking, only `osm_key=highway`, `osm_key=building` or `place=house` count
+as a street ("a street never beats a settlement"). A hospital is not a street.
 
-1. major cities
-2. landmarks near the parent place
-3. the remaining towns
-4. far landmarks
+**Picker search (`search`)** runs in stages. `onUpdate(found)` is called with
+the whole merged list after each stage, so towns show first:
 
-Duplicates within 2 km are dropped. `onTowns` delivers the fast Open-Meteo
-results first.
+1. Open-Meteo towns (5).
+2. With a parent place: Photon inside the area (`bbox`, limit 8).
+3. Photon biased to the parent place (limit 5). It still runs when stage 2
+   fails, and fills the Elsewhere rows.
+
+Both Photon stages go on the interactive queue. `search` rejects only when
+every stage failed. The merge lives in `rank.ts` (`mergeSearch`):
+
+- **No parent place:** major cities, the other towns, then landmarks, in one
+  list.
+- **With a parent place:**
+  1. Inside the area: settlements and named places before streets, then
+     nearest first.
+  2. Elsewhere, flagged `elsewhere`: major cities first (so `@Madrid` under
+     Barcelona is one tap away), then the other towns, then landmarks.
+- Same-name places within 2 km are dropped, across sections.
+- At most 8 rows inside and 8 elsewhere.
 
 Photon's queue serves searches you type before background lookups, and skips
 searches cancelled because you kept typing.
+
+**Place kinds** (`kinds.ts`, pure). `kindOfPhoton(osm_key, osm_value)` and
+`kindOfOpenMeteo(feature_code, population)` set `Place.kind`. Photon's
+`properties.extent` is `[west, north, east, south]`; `photonExtent` reorders
+it to `[west, south, east, north]`.
+
+| Kind | Icon | From |
+|---|---|---|
+| `region` | 🗺️ | place=country/state/region/province, boundary=administrative; Open-Meteo ADM*/PCL* |
+| `city` | 🏙️ | place=city/town; Open-Meteo PPLC, PPLA*, or PPL with population ≥ 10k |
+| `village` | 🏘️ | place=village/hamlet; other Open-Meteo places |
+| `neighbourhood` | 🏠 | place=suburb/neighbourhood/quarter/borough/district |
+| `restaurant` | 🍽️ | amenity=restaurant/fast_food/food_court |
+| `cafe` | ☕ | amenity=cafe/ice_cream |
+| `bar` | 🍷 | amenity=bar/pub/biergarten |
+| `shop` | 🛍️ | shop=*, amenity=marketplace |
+| `stay` | 🛏️ | tourism=hotel/hostel/guest_house/apartment/motel |
+| `sight` | 🏛️ | tourism=attraction/museum/gallery/viewpoint/artwork, historic=* |
+| `park` | 🌳 | leisure=park/garden, landuse=forest |
+| `beach` | 🏖️ | natural=beach |
+| `nature` | ⛰️ | natural=peak/volcano, boundary=protected_area |
+| `airport` | ✈️ | aeroway=aerodrome/terminal |
+| `station` | 🚉 | railway=station/halt, amenity=bus_station, public_transport=station |
+| `street` | 📍 | anything else, and places without a kind |
+
+The icon shows on place chips, picker rows and map marker tooltips.
 
 **Network discipline** (proven necessary by the CI live check: Photon's public
 server answers 503 to bursts, then refuses connections):
@@ -363,9 +498,9 @@ or `/none` and pressing Enter. The command must be its own word
 
 | View | Shows |
 |---|---|
-| **Map** | One numbered marker per resolved place mention in the node and its subtree, in document order. Markers are joined by a dashed line in visit order, and the map fits its bounds. Clicking a marker focuses its node. |
+| **Map** | One numbered marker per resolved place mention in the node and its subtree, in document order. Markers are joined by a dashed line in visit order, and the map fits its bounds. A marker's tooltip shows the place-kind icon and label. Clicking a marker focuses its node. |
 | **Calendar** | A Monday-first grid covering only the weeks between the first and last date in the subtree. Each day lists the nodes whose *own* text mentions that date, with the date itself stripped from the label. Clicking an entry focuses the node. In narrow containers (≤ 520 px, via a container query) the grid shrinks to dots and an agenda list (date, then entries) appears below it. |
-| **Table** | One row per direct child: text (rendered, without formulas), place, date, then one column per formula in that row. A light, grid-like lens on the list. In narrow containers the Place column is hidden, since it repeats the chip in the text. |
+| **Table** | One row per direct child: text (rendered, without formulas or route chips; weather chips stay inline), place, date, a **Travel** column when any row has a route phrase (its travel chips, Directions link included), then one column per formula in that row. A light, grid-like lens on the list. In narrow containers the Place column is hidden, since it repeats the chip in the text. |
 
 The **map** has its own stacking context, so Leaflet's panes never draw over the
 sticky header.
@@ -386,20 +521,53 @@ a marker or entry highlights the row.
   `@`/`{}` source.
   - **Formatting while typing.** The textarea's text is transparent and sits
     over a mirror `div` that renders the same characters with mentions, dates
-    and formulas coloured. Both use the read view's font. Highlights change
-    only colour and background, never metrics, so the caret stays aligned.
+    and formulas coloured. Mode words of recognised routes (`.hl-mode`) and
+    weather words (`.hl-weather`) take the formula colours. Both layers use
+    the read view's font. Highlights change only colour and background, never
+    metrics, so the caret stays aligned.
   - **Place picker.** While the caret is in an `@word` or `@[words` mention,
-    a list shows:
-    - places already in this document that match (instant and offline)
-    - debounced (250 ms) `search` results from 2 characters up, biased to the
-      bullet's inherited place
+    a list shows, in this order:
+    - places already in this document that match (instant and offline, at
+      most 4)
+    - debounced (250 ms) `search` results from 2 characters up: rows inside
+      the bullet's inherited place's area (at most 8), then a non-interactive
+      **Elsewhere** divider and the rows outside it (at most 8). The divider
+      shows only with a parent place, a row before it and a row after it.
+      Remote rows within 2 km of a saved row are dropped.
 
-    Tap, or `↑`/`↓` then `Enter`/`Tab`, inserts `@Name` (or `@[Name]`) and
-    stores that exact place, so no blind lookup happens. Picking again
-    re-picks. `Escape` closes the list; a second `Escape` leaves the row.
+    Each row starts with its place-kind icon. Tap, or `↑`/`↓` then
+    `Enter`/`Tab`, inserts `@Name` (or `@[Name]`) and stores that exact place
+    (with its kind and extent), so no blind lookup happens. Picking again
+    re-picks. The highlighted row is scrolled into view. `Escape` closes the
+    list; a second `Escape` leaves the row.
+  - **Travel-mode popup** (`ModePicker.tsx`, `useModePicker.ts`). When the
+    caret has just completed a `to @X` (or `from @A to @B`) with no mode word
+    in front, a popup under the row offers 🚗 Drive · 🚶 Walk ·
+    🚆 Public transport · 🚲 Bike · ✈ Fly, in that fixed order.
+    - It opens only after a place-picker pick, or when exactly one space or
+      punctuation mark is typed right after the mention. Not for the `]` that
+      closes `@[…]`, not while an IME is composing, and not while the caret is
+      still inside an @mention. Never after "next to", "close to" or
+      "near to", or when a mode word is already there.
+    - Tap a row, or `↑`/`↓` then `Enter`/`Tab`. Choosing inserts the mode's
+      word and a space before "to" (or "from"), and the caret keeps its place
+      in the text: `to @Porto` becomes `drive to @Porto`.
+    - It closes on any text change (Android's keyCode 229 input included), on
+      `Escape`, on any other key, and when the caret moves (a click, tap or
+      selection elsewhere). A dismissed phrase (`${at}|${mention}`) doesn't
+      reopen in that editing session.
+    - The place picker wins while it is showing. Rows `preventDefault` on
+      pointer/mouse down, so the editor keeps focus and the keyboard stays up;
+      on touch screens they are at least 44 px.
 - **Unfocused node:** `RichText`. Places become chips (dashed while unresolved,
-  red if not found), dates become chips, and formulas become result chips. The
-  raw formula appears on hover.
+  red if not found) with their kind icon, dates become chips, and formulas
+  become result chips. The raw formula appears on hover. A weather word becomes
+  a weather chip in its place. A route phrase keeps its words and gains a
+  travel chip right after the destination. Transit's chip holds a separate
+  "Directions ↗" link: a plain `<a target="_blank" rel="noopener noreferrer">`
+  whose click doesn't open the editor, with a 44 px hit area on touch.
+  On Android, Capacitor hands other hosts to the system (not yet tried on a
+  device).
 - **Keys:**
   - `Enter` splits the node at the caret, or creates a new sibling. At the
     very start of a non-empty node it inserts an empty bullet *above*, so the
@@ -430,7 +598,10 @@ a marker or entry highlights the row.
 - **First launch:** the library seeds the sample Portugal trip from
   `model/sample.ts`, titled "Portugal road trip (sample)". It exercises every
   feature, and its places ship with real coordinates, so it works instantly
-  and offline.
+  and offline. It uses both forms: phrases (`— drive from @Lisbon to @Porto`,
+  `Porto weather`) and formulas (`{weather()}`, `{route(prev, here)}`,
+  `{distance(…)}`), with no fact shown twice. Its places have no `kind`, so
+  they show 📍.
 
 ---
 
@@ -461,9 +632,11 @@ npm run build
 - Network APIs are never hit by `npm test`.
 - **Browser check** (`scripts/e2e.cjs`, Playwright, APIs stubbed): after
   `npm run build`, serve with `npx vite preview --port 4176 --strictPort` and
-  run `node scripts/e2e.cjs <out-dir>`. It covers the editor, views, library,
-  phone layout and both themes, and exits non-zero on any failure. Add checks
-  for every new user-visible behaviour.
+  run `node scripts/e2e.cjs <out-dir>`. On another port, start the preview
+  there and set `E2E_PORT` (e.g. `E2E_PORT=4191 node scripts/e2e.cjs <out-dir>`).
+  It covers the editor, views, library, phrases, the travel-mode popup, area
+  search, phone layout and both themes, and exits non-zero on any failure. Add
+  checks for every new user-visible behaviour.
 - `src/services/live.test.ts` runs only with `LIVE_SERVICES=1`, in the
   `live-check.yml` workflow. It calls the real APIs and logs what they return,
   and is the first stop when a data feature misbehaves on a device.
@@ -490,7 +663,7 @@ npm run build
 4. **Views:** map, calendar, table, linked hover.
 5. **Library:** many notes, Timeline home, search, pin, archive, delete with
    undo, note titles, visual system (§12, `DESIGN.md`).
-6. **Natural phrases and area search** (designed, not built): "weather" and
+6. **Natural phrases and area search** (§3.2, §4.3, §5, §7): "weather" and
    "drive to @Porto" without brackets, a travel-mode popup, place-kind icons,
    and searching inside the parent bullet's place. Spec:
    `docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`.

@@ -22,8 +22,10 @@ LiveNotes is a notes app where an ordinary bulleted outline becomes a dynamic
 document. It is modeled on Ink & Switch's *Embark*.
 
 - **Mentions:** `@Place` and dates such as `Nov 3` are recognised in plain text.
+- **Phrases:** plain words do the common things without brackets. "weather"
+  shows the forecast, and "drive to @Porto" shows the drive.
 - **Formulas:** `{weather()}`, `{route(prev, here)}` and others pull in live
-  data.
+  data. They remain the precise way.
 - **Views:** a map, calendar or table of any part of the outline.
 
 Success means the owner can keep many notes and find them quickly. A plan's
@@ -67,6 +69,23 @@ until the owner adds structure.
   phone (`livenotes:doc:v1`) becomes their first note.
 - **Note editor:** the existing outline editor. It keeps mentions, the place
   picker, formulas, views, the phone toolbar and export via the share sheet.
+- **Weather and travel in plain words.**
+  - "weather" or "forecast" becomes a chip with the forecast for the bullet's
+    place and date.
+  - A mode word before "to @Place" or "from @A to @B" becomes a travel chip:
+    drive (real time and distance), walk and bike (time estimated from the
+    road distance, marked ≈), public transport (distance and a Google Maps
+    "Directions ↗" link), fly (straight-line distance, works offline).
+  - Typing or picking "to @Place" without a mode word opens a popup: Drive,
+    Walk, Public transport, Bike, Fly. The choice is written into the text as
+    a word.
+  - A table view gains a Travel column when its rows have routes.
+- **Finding places inside the parent's place.** Under a bullet with @Barcelona,
+  "@airport" suggests Barcelona's airport first, then an "Elsewhere" section.
+  A typed, unpicked mention resolves inside that area too.
+- **Place-kind icons** on chips, picker rows and map tooltips: cities,
+  villages, neighbourhoods, restaurants, cafés, bars, shops, hotels, sights,
+  parks, beaches, nature, airports and stations.
 - **Technical:** React 19, TypeScript, Vite, Capacitor 8 for Android, and
   debug APKs built by GitHub Actions. No backend and no accounts. Fonts and
   assets must ship with the app, because it must work offline.

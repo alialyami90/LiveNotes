@@ -254,7 +254,8 @@ on both layers in the same rule.
 - **Phones (≤ 440 px):** the route sketch shrinks to 72×48 and the rail column to 48 px,
   so a 22 px card title keeps room.
 - **Touch (`pointer: coarse`):** every tappable thing is at least 44 px tall: toolbar
-  buttons, picker options, agenda entries, add-bullet, card menu, pinned chips.
+  buttons, picker options, travel-mode popup rows, the Directions link (by its hit area),
+  agenda entries, add-bullet, card menu, pinned chips.
 - **Safe areas:** body and header honour `env(safe-area-inset-*)` (Capacitor
   `viewport-fit=cover`).
 
@@ -286,11 +287,39 @@ Soft rectangles that get rounder as they get smaller and more tappable.
 
 ### Chips (mentions and results)
 - **Style:** highlighter wash background with matching ink, 1px 5px padding, 6px radius,
-  0.94em, wrapping across lines with `box-decoration-break: clone`. Places carry a 📍.
+  0.94em, wrapping across lines with `box-decoration-break: clone`.
+- **Place icons:** a place chip starts with its kind's icon at 0.8em, drawn by
+  `.chip-place::before` from `data-icon`, then a word joiner so the icon never wraps away
+  from the name: 🏙️ city, 🏘️ village, 🏠 neighbourhood, 🗺️ region, 🍽️ restaurant,
+  ☕ café, 🍷 bar, 🛍️ shop, 🛏️ stay, 🏛️ sight, 🌳 park, 🏖️ beach, ⛰️ nature,
+  ✈️ airport, 🚉 station. Streets, unknown kinds and places saved before kinds keep 📍.
+  Picker rows and map marker tooltips show the same icon.
+- **Phrase chips:** weather and travel results are formula chips (green). A weather word
+  is replaced by its chip (`⛅ 22° / 14°`). A travel chip follows the destination and
+  starts with the mode icon: `🚗 3h 05m · 313 km`, `🚶 ≈ 1h 10m · 5.8 km`,
+  `🚲 ≈ 25 min · 6.1 km`, `🚆 313 km · Directions ↗`, `✈ 503 km`. "≈" marks an estimate.
+- **Directions link** (`.chip-link`): inside the transit chip, in the chip's own ink,
+  underlined with a 2px offset. On touch its `::before` makes a 44px-tall hit area
+  without changing the chip's line box.
 - **States:** pending shows a dashed outline in the chip's own ink, and for formulas a
   dashed border. Unreachable shows a dashed red outline plus ⟳. Not found shows the error
   wash with a wavy underline. An error formula is a one-line red chip that opens a popover
   on tap.
+
+### Place picker and travel-mode popup
+- **Shape:** both are the same floating list (`.picker`): paper, hairline border, 10px
+  radius, floating shadow, anchored under the row being edited.
+- **Rows:** a 1.5em icon column, then the name (body 600) over the label (meta, soft ink).
+  The active row takes the place wash and ink. A saved row adds the "in this doc" micro
+  tag. On touch, rows are at least 44px.
+- **Elsewhere divider** (`.picker-divider`): a non-interactive row with a hairline top
+  border and the word "Elsewhere" in micro capitals, soft ink. It separates the rows
+  inside the parent's area from the rest.
+- **Travel-mode popup** (`.picker-modes`): five one-line rows, mode icon then label
+  (🚗 Drive, 🚶 Walk, 🚆 Public transport, 🚲 Bike, ✈ Fly). The active row takes the
+  formula wash and ink, like the mode word it writes.
+- **Editor highlight:** a recognised mode word (`.hl-mode`) and a weather word
+  (`.hl-weather`) take the formula wash, colour only.
 
 ### Note card
 - **Shape:** 14px radius, paper sheet, hairline border, card shadow. The hover border is

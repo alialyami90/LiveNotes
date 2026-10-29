@@ -5,8 +5,9 @@ the way of working that kept quality high so far. `CLAUDE.md` is the
 engineering spec and working agreement; this file is the "where we are and how
 we work" layer on top of it.
 
-Last updated: 2026-10-29, at commit `52230d4` (then the commit adding this
-file) on branch `ccr-0140cca5-y52lpq`.
+Last updated: 2026-10-29, at Task 8 of the natural-phrases plan: commit
+`f491d5f` (browser and live checks), then the docs commit that updates this
+file. Both are integrated onto branch `ccr-0140cca5-y52lpq` by cherry-pick.
 
 ---
 
@@ -34,63 +35,64 @@ file) on branch `ccr-0140cca5-y52lpq`.
    `docs/superpowers/plans/2026-10-29-notes-library.md`. CLAUDE.md §12
    describes the result.
 
-Verification at the last code commit (`560979f`):
-
-- typecheck clean
-- 493 unit/UI tests pass (9 live tests skipped)
-- build OK
-- the browser check (`scripts/e2e.cjs`) passes **57/57** on desktop and Pixel 7,
-  light and dark
-- the Android APK workflow is green, including the `@capacitor/app` back-button
-  plugin
-
 The APK is at
 https://github.com/alialyami90/LiveNotes/releases/download/android-latest/livenotes-debug.apk
 
-### In progress: natural-language routes and weather, place kinds, area search
+### Built, waiting for the final review: natural-language routes and weather, place kinds, area search
 
-- **Spec written and committed. It is waiting for the owner to review it:**
-  `docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`
-- All design questions were answered by the owner, one at a time (spec §1
-  records each answer).
-- **No plan has been written and no code changed yet.**
+Spec (approved by the owner):
+`docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`.
+Plan: `docs/superpowers/plans/2026-10-29-natural-phrases-and-area-search.md`.
+Ledger: `.superpowers/sdd/2026-10-29-natural-phrases-and-area-search/progress.md`.
+All 8 tasks are done, each reviewed (Tasks 1, 4, 6 and 7 after one fix round).
+
+What shipped (CLAUDE.md §3.2, §4.3, §5, §6, §7 describe it):
+
+- **Phrases** (`syntax/phrases.ts`, `scan.ts`): "weather"/"forecast" and
+  "<mode> to @X" / "<mode> from @A to @B" are recognised in plain text. Whole
+  words only, never inside URLs, emails or compounds. `\weather` escapes.
+- **`travel` built-in** (`formula/travel.ts`): drive (OSRM), walk and bike
+  (≈, from the road distance, error over 100 km), transit (distance plus a
+  Google Maps Directions link), fly (great circle, offline). Phrases run as
+  synthetic formulas, so pending, errors and memoising are shared.
+- **Chips:** weather chips replace the word; travel chips follow the
+  destination; a Travel column in the table view.
+- **Travel-mode popup** (`ui/ModePicker.tsx`, `ui/useModePicker.ts`): after a
+  pick or a typed boundary character in "to @X" with no mode word. It writes
+  the mode word into the text.
+- **Place kinds** (`services/kinds.ts`): `Place.kind` and `Place.extent`,
+  icons on chips, picker rows and map tooltips.
+- **Area search** (`services/http.ts`, `rank.ts`): search and geocode inside the
+  parent place's area first; the picker's "Elsewhere" divider; staged
+  `onUpdate`; no guessed place stored after a transient failure.
+- **Sample note:** "— drive from @Lisbon to @Porto" and "Porto weather" replace
+  the formulas that showed the same facts.
+- **Browser check:** `scripts/e2e.cjs` reads its port from `E2E_PORT`; its
+  stubs model Photon's `bbox`, `osm_key`/`osm_value`/`extent` and Open-Meteo's
+  population and feature codes.
+
+Verification at `f491d5f` plus the docs commit (Task 8):
+
+- typecheck clean
+- **713** unit/UI tests pass (12 live tests skipped); the only noise is the
+  pre-existing jsdom "Not implemented: Window's alert()" line
+- build OK
+- the browser check passes **75/75** (57 earlier plus 18 new) on desktop and
+  Pixel 7, light and dark
+- CI (APK and live check) not yet run for this feature: it runs once the branch
+  is pushed
 
 ### Next steps, in order
 
-1. **Get the owner's approval of the spec.** Ask them to review the file. If
-   they request changes, edit the spec, re-run the self-review (no TBDs, no
-   contradictions, no ambiguity) and commit. Do not start planning before an
-   explicit approval of the written spec. The superpowers brainstorming gate
-   requires this.
-2. Invoke `superpowers:writing-plans` to write
-   `docs/superpowers/plans/2026-10-29-natural-phrases-and-area-search.md`.
-   Use the same structure as the library plan: Global Constraints, Review
-   Focus, and tasks with Interfaces blocks and tests. A sensible task split,
-   each owning disjoint files so they can run in parallel:
-   - **T1** `syntax/phrases.ts` + tokenizer segments + escapes (pure, TDD).
-   - **T2** `services/kinds.ts` + `Place.kind`/`extent` + Photon and
-     Open-Meteo parsing (pure, TDD).
-   - **T3** `formula/travel.ts` + the `travel` value + `format.ts` strings +
-     wiring segments into evaluation (depends on T1).
-   - **T4** Area search and geocode order in `services/http.ts`, with
-     `onUpdate` staging (depends on T2).
-   - **T5** Chips and highlighting: RichText, Chips, mirror colours, icons on
-     chips, the table "Travel" column (depends on T1, T2, T3).
-   - **T6** The mode popup, `ModePicker` + `useModePicker`, wired into
-     NodeEditor (depends on T1).
-   - **T7** Place picker: icons and the "Elsewhere" divider (depends on T2,
-     T4).
-   - **T8** Browser checks added to `scripts/e2e.cjs`, live-check cases in
-     `src/services/live.test.ts`, and doc updates (CLAUDE.md §1, §3–§7,
-     PRODUCT.md, DESIGN.md).
-3. Ask the owner to choose the execution method (subagent-driven or native).
-   Last time they chose **subagent-driven** and asked for **parallel subagents
-   to speed things up**. Expect the same, but ask.
-4. Execute with `superpowers:subagent-driven-development` (see §3).
-5. Final whole-branch review on the most capable model, then one fix round and
-   a scoped re-review.
-6. Push, confirm CI (APK and live check), update the docs, then
-   `superpowers:finishing-a-development-branch`.
+1. **Final whole-branch review** on the most capable model, against the spec
+   and the plan (base `207fd08`). Ask it to trace the geocode transient paths
+   and the popup's arm/dismiss rules. Then one fix round and a scoped
+   re-review. The ledger lists the deferred minors to weigh.
+2. Push, and confirm both workflows are green: the Android APK and
+   `live-check.yml` (its new cases: airport near Barcelona, cafe near Lisbon,
+   Photon extent order).
+3. Raise the open owner items in §5.
+4. `superpowers:finishing-a-development-branch`.
 
 ---
 
@@ -220,6 +222,11 @@ npx vite preview --port 4176 --strictPort &      # keep its PID; stop it by PID 
 node scripts/e2e.cjs <out-dir>                   # screenshots + results.json; exit code 1 on any failure
 ```
 
+If 4176 is taken (see §5), serve on another port and pass it in `E2E_PORT`:
+`npx vite preview --port 4191 --strictPort &` then
+`E2E_PORT=4191 node scripts/e2e.cjs <out-dir>`. Run the preview from the
+checkout you are testing, so it serves that build.
+
 Chromium and Playwright are preinstalled (`require('playwright')` works; don't
 run `playwright install`). Full-page screenshots switch off touch emulation,
 which is why the script takes them last. Add checks for every new
@@ -279,47 +286,77 @@ Don't re-litigate these without a new reason:
     `src/styles/chrome.css`.
   - impeccable suggested `PRODUCT.md` Platform `android` instead of `web`.
     This is unchanged.
-- **Agent worktrees** under `.claude/worktrees/` from the library round can be
-  removed with `git worktree remove` (check `git -C <wt> status` first). They
-  hold only copies of work already on the branch.
+- **Agent worktrees** under `.claude/worktrees/` from the library and phrases
+  rounds can be removed with `git worktree remove` (check `git -C <wt> status`
+  first). They hold only copies of work already on the branch.
+
+From the natural-phrases work:
+
+- **Try the popup and the Directions link on a real phone** (Gboard). Check
+  that typing "to @porto " opens the popup (Gboard may commit the space
+  while composing, or autocorrect may commit word and space at once; then it
+  won't open, though picking from the place picker still does), that tapping a
+  row keeps the keyboard up, and that "Directions ↗" opens Maps or the browser
+  from the APK.
+- **`@Sitges` under `@Barcelona`.** A town just outside the ±30 km box can
+  resolve to an in-area place with the same name instead of the town (built to
+  spec §6.3, "inside first"). Picking from the list always gets the town.
+  Decide whether that trade-off is right.
+- **An undated "weather" in ordinary prose** shows a red "no date here" chip
+  ("Pack for the weather @Lisbon" with no date above it). Built as the spec
+  says. Recommendation: show the plain word when the bullet has no date or
+  place.
+- **A stray `vite preview` on port 4176** from an earlier session (cwd the main
+  checkout) still runs. It serves an old build. Stop it by PID, or keep using
+  `E2E_PORT`.
+- **The sample's "How this works" bullet and the editor's footer hint** still
+  teach only `@`, dates, `{formulas}` and `/views`. They don't mention the
+  plain-word phrases yet.
 
 ---
 
-## 6. File map for the new feature
+## 6. File map for the natural-phrases feature
 
-The new feature will touch these existing files. Read them first.
+Where each part lives, for the final review and later changes:
 
-- **Tokenizer:**
-  - `src/syntax/tokenize.ts` holds `Segment`, `placeAt`, the escapes and
-    `displayText`.
-  - `src/syntax/dates.ts` is the model for word-level recognition.
-- **Context:** `src/context/resolve.ts` gives the effective place and date,
-  `prevKey`, `inheritedPlaceKey` and `ownPlaces`.
+- **Phrases:**
+  - `src/syntax/scan.ts` finds places, dates, formulas and escapes, and holds
+    `Segment` and `placeAt`.
+  - `src/syntax/phrases.ts` holds `MODES`, the phrase word rules,
+    `recognizePhrases`, `routeWithoutMode` and `insertModeWord`.
+  - `src/syntax/tokenize.ts` is `recognizePhrases(scan(text))` plus
+    `displayText`. `plain.ts` keeps weather words and drops routes.
+- **Context:** `src/context/resolve.ts` gives `prevKey` and
+  `inheritedPlaceKey`, unchanged.
 - **Formulas:**
-  - `src/formula/evaluate.ts` has the built-ins `weather`, `route`, `prev`, and
-    `FORECAST_DAYS`.
-  - `values.ts` and `format.ts` hold the value types and chip strings.
+  - `src/formula/travel.ts` has `travel`, `directionsUrl` and `phraseSource`.
+  - `evaluate.ts` has the `travel` built-in and `.distance`/`.duration`.
+  - `values.ts` has the `travel` value; `format.ts` has the chip strings and
+    `TRAVEL_ICON`.
 - **Services:**
-  - `src/services/http.ts` contains `openMeteo()`, `photon()`, the queue,
-    `geocode`, `search` with `onTowns`, and the `isNear`/`isMajor` rules.
-  - `types.ts` is the `Services` interface.
-  - `services.test.ts` holds the fake-fetch tests.
-  - `live.test.ts` is the live check.
+  - `src/services/http.ts`: `openMeteo()`, `photon()` (with `bbox`), the queue,
+    `geocode` (area first, transient rules) and staged `search` with
+    `onUpdate`.
+  - `rank.ts`: `mergeSearch`, `isNear`, `isMajor`, `toPlace`.
+  - `geo.ts`: `haversine`, `areaOf`, `inArea`.
+  - `kinds.ts`: `kindOfPhoton`, `kindOfOpenMeteo`, `isStreetTag`,
+    `photonExtent`, `placeIcon`.
+  - `types.ts`: `Services`, `Found`, `SearchOptions`.
+  - `services.test.ts` (fake fetch) and `live.test.ts` (live check).
 - **Editor:**
-  - `src/ui/NodeEditor.tsx` covers the mirror, the picker wiring, and the IME
-    composition guards.
-  - `PlacePicker.tsx` and `usePlaceSearch.ts` are the picker.
-  - `syntax/mention.ts` finds the mention under the caret.
-- **Chips:**
-  - `src/ui/RichText.tsx` renders the read view.
-  - `Chips.tsx` holds the place, date and formula chips, the error popover
-    portal, and the `.chip-wrap` hit area.
-  - `useFormula.ts` re-evaluates formulas.
-- **Views:** `src/ui/views/TableView.tsx` (Travel column) and `collect.ts`.
-- **Styles:**
-  - `src/styles/chips.css` holds `.chip-place::before`, which has the 📍 and
-    word joiner.
-  - Tokens are in `src/styles/tokens.css`.
-  - Read `DESIGN.md` before changing styles.
-- **Model:** `src/model/types.ts` (`Place`) and `src/model/storage.ts`
-  (`isDoc` validation).
+  - `src/ui/NodeEditor.tsx`: the mirror (`.hl-mode`, `.hl-weather`), the
+    picker and popup wiring, and the IME guards.
+  - `ModePicker.tsx` and `useModePicker.ts`: the travel-mode popup.
+  - `PlacePicker.tsx` and `usePlaceSearch.ts`: the picker, its sections and
+    the Elsewhere divider.
+- **Chips:** `src/ui/RichText.tsx` (phrase segments) and `Chips.tsx` (icons,
+  the travel chip and its Directions link).
+- **Views:** `src/ui/views/TableView.tsx` (Travel column) and `MapView.tsx`
+  (marker tooltip icons).
+- **Styles:** `src/styles/chips.css` (`.chip-place::before`, `.chip-link`),
+  `touch.css` (picker, divider, popup, 44 px rules) and `outline.css`
+  (`.hl-*`). Read `DESIGN.md` before changing styles.
+- **Model:** `src/model/types.ts` (`Place.kind`, `Place.extent`,
+  `PlaceKind`) and `src/model/sample.ts`.
+- **Browser check:** `scripts/e2e.cjs` (`phraseFlow`, `phraseShots`, the
+  stubs).
