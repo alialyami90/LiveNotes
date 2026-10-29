@@ -82,11 +82,18 @@ function fakeFetch(routes: Route[]) {
   return { fn, urls, maxInFlight: () => maxInFlight };
 }
 
-const om = (...results: [string, number, number, string, string][]) => ({
-  body: { results: results.map(([name, latitude, longitude, admin1, country]) => ({ name, latitude, longitude, admin1, country })) },
+const om = (...results: [string, number, number, string, string, number?][]) => ({
+  body: {
+    results: results.map(([name, latitude, longitude, admin1, country, population]) => ({ name, latitude, longitude, admin1, country, population })),
+  },
 });
-const photon = (...features: [string, number, number, string, string][]) => ({
-  body: { features: features.map(([name, lat, lon, city, country]) => ({ geometry: { coordinates: [lon, lat] }, properties: { name, city, country } })) },
+const photon = (...features: [string, number, number, string, string, string?][]) => ({
+  body: {
+    features: features.map(([name, lat, lon, city, country, osm_key = 'place']) => ({
+      geometry: { coordinates: [lon, lat] },
+      properties: { name, city, country, osm_key },
+    })),
+  },
 });
 const noSleep = { sleep: async () => {}, photonGapMs: 0 };
 
@@ -192,6 +199,37 @@ describe('review fixes: geocode edge cases', () => {
     ]);
     await httpServices(f.fn, { sleep: async (ms) => { sleeps.push(ms); }, photonGapMs: 1500 }).geocode('x');
     expect(sleeps.every((ms) => ms >= 1500)).toBe(true);
+  });
+});
+
+describe('far cities under a parent place (live finding: Dammam under Riyadh)', () => {
+  const RIYADH = { name: 'Riyadh', lat: 24.69, lon: 46.72 };
+
+  it('a major city beats a same-name local match near the parent', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Dammam', 26.43442, 50.10326, 'Eastern Province', 'Saudi Arabia', 1252523]) },
+      { match: PHOTON, respond: () => photon(['Dammam', 24.7764, 46.7305, 'Riyadh governorate', 'Saudi Arabia']) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('dammam', RIYADH);
+    expect(p).toEqual({ name: 'Dammam', lat: 26.43442, lon: 50.10326, label: 'Dammam, Eastern Province, Saudi Arabia' });
+  });
+
+  it('a street never beats a town', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Sintra', 38.8, -9.38, 'Lisbon District', 'Portugal', 26193]) },
+      { match: PHOTON, respond: () => photon(['Sintra', 41.15, -8.6, 'Porto', 'Portugal', 'highway']) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('sintra', { name: 'Porto', lat: 41.15, lon: -8.61 });
+    expect(p?.lat).toBe(38.8);
+  });
+
+  it('the picker lists the major city before the local match', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Dammam', 26.43442, 50.10326, 'Eastern Province', 'Saudi Arabia', 1252523]) },
+      { match: PHOTON, respond: () => photon(['Dammam', 24.7764, 46.7305, 'Riyadh governorate', 'Saudi Arabia']) },
+    ]);
+    const results = await httpServices(f.fn, noSleep).search('dammam', RIYADH);
+    expect(results.map((r) => r.label)).toEqual(['Dammam, Eastern Province, Saudi Arabia', 'Dammam, Riyadh governorate, Saudi Arabia']);
   });
 });
 

@@ -268,13 +268,27 @@ interface Services {
 **How a mention is resolved (`geocode`).**
 
 1. Ask Open-Meteo for the top match.
-2. If that match is within 75 km of the parent bullet's place (or there is no
-   parent place), use it.
-3. Otherwise ask Photon, biased to the parent place, and fall back to the
-   Open-Meteo result.
+2. Use that match if any of these hold:
+   - there is no parent place
+   - it is within 75 km of the parent bullet's place
+   - it is a major city (population ≥ 100k), so `@Dammam` under Riyadh means
+     the city, not a local namesake (a live check found exactly this)
+3. Otherwise ask Photon, biased to the parent place. A Photon street
+   (`osm_key=highway`) never beats a town. The far Open-Meteo match is used
+   only once Photon has actually answered.
 
-`search` merges both sources. Near a known place, nearby landmarks come first;
-otherwise ranked towns come first. Duplicates within 2 km are dropped.
+`search` merges both sources in this order:
+
+1. major cities
+2. landmarks near the parent place
+3. the remaining towns
+4. far landmarks
+
+Duplicates within 2 km are dropped. `onTowns` delivers the fast Open-Meteo
+results first.
+
+Photon's queue serves searches you type before background lookups, and skips
+searches cancelled because you kept typing.
 
 **Network discipline** (proven necessary by the CI live check: Photon's public
 server answers 503 to bursts, then refuses connections):

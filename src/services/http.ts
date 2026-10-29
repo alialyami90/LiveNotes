@@ -19,7 +19,7 @@ function describeWeather(code: number): Pick<Weather, 'condition' | 'icon'> {
 }
 
 interface OpenMeteoGeoResponse {
-  results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string }[];
+  results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string; population?: number }[];
 }
 
 interface PhotonResponse {
@@ -43,8 +43,14 @@ export interface HttpOptions {
 }
 
 const RETRY_DELAYS_MS = [700, 2000];
-/** A town match further than this from the surrounding place is probably a namesake. */
+/** A town match further than this from the surrounding place is probably a namesake... */
 const NEAR_KM = 75;
+/** ...unless it's a major city: "@Dammam" under Riyadh means the city, not a local namesake. */
+const MAJOR_CITY = 100_000;
+
+/** Candidates carry ranking hints that are dropped before a Place is stored. */
+type Candidate = Place & { population?: number; street?: boolean };
+const toPlace = ({ name, lat, lon, label }: Candidate): Place => (label ? { name, lat, lon, label } : { name, lat, lon });
 const SAME_PLACE_M = 2000;
 
 const label = (...parts: (string | undefined)[]) =>
@@ -123,7 +129,7 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
     });
   }
 
-  async function openMeteo(q: string, count: number): Promise<Place[]> {
+  async function openMeteo(q: string, count: number): Promise<Candidate[]> {
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${count}&language=en&format=json`;
     const data = await getJson<OpenMeteoGeoResponse>(url, 'place lookup unavailable');
     return (data.results ?? []).map((r) => ({
@@ -131,19 +137,20 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
       lat: r.latitude,
       lon: r.longitude,
       label: label(r.name, r.admin1, r.country),
+      population: r.population,
     }));
   }
 
-  function photon(q: string, limit: number, near: Place | undefined, priority: 'interactive' | 'background', signal?: AbortSignal): Promise<Place[]> {
+  function photon(q: string, limit: number, near: Place | undefined, priority: 'interactive' | 'background', signal?: AbortSignal): Promise<Candidate[]> {
     const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
     const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=${limit}&lang=en${bias}`;
     return viaPhotonQueue(async () => {
       const data = await getJson<PhotonResponse>(url, 'place lookup unavailable', photonGapMs);
       return (data.features ?? []).map((f) => {
         const [lon, lat] = f.geometry.coordinates;
-        const { name, city, county, state, country } = f.properties;
+        const { name, city, county, state, country, osm_key } = f.properties;
         const n = name ?? q;
-        return { name: n, lat, lon, label: label(n, city ?? county ?? state, country) };
+        return { name: n, lat, lon, label: label(n, city ?? county ?? state, country), street: osm_key === 'highway' };
       });
     }, priority, signal);
   }
@@ -162,32 +169,36 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
     results.some((r) => r.transient) ? new TransientError('place lookup unavailable') : new Error('place lookup failed');
 
   const isNear = (p: Place, near?: Place) => !near || haversine(p, near) <= NEAR_KM * 1000;
+  const isMajor = (p?: Candidate) => (p?.population ?? 0) >= MAJOR_CITY;
 
   return {
     async geocode(name, near) {
       const om = await settle(openMeteo(name, 1));
       const town = om.value[0];
-      if (town && isNear(town, near)) return town;
+      if (town && (isNear(town, near) || isMajor(town))) return toPlace(town);
       const ph = await settle(photon(name, 1, near, 'background'));
-      if (ph.value[0]) return ph.value[0];
+      const landmark = ph.value[0];
+      if (landmark && !(landmark.street && town)) return toPlace(landmark);
       // A far-away namesake is only acceptable once Photon has really answered.
-      if (town && !ph.transient) return town;
+      if (town && !ph.transient) return toPlace(town);
       if (om.failed || ph.failed) throw failure(om, ph);
       return null;
     },
 
     async search(query, near, opts = {}) {
-      const towns = settle(openMeteo(query, 5));
-      void towns.then((r) => r.value.length && opts.onTowns?.(r.value), () => undefined);
-      const [om, ph] = await Promise.all([towns, settle(photon(query, 5, near, 'interactive', opts.signal))]);
+      const townsP = settle(openMeteo(query, 5));
+      void townsP.then((r) => r.value.length && opts.onTowns?.(r.value.map(toPlace)), () => undefined);
+      const [om, ph] = await Promise.all([townsP, settle(photon(query, 5, near, 'interactive', opts.signal))]);
       if (om.failed && ph.failed) throw failure(om, ph);
-      // Near a known place, biased landmarks lead; otherwise population-ranked towns do.
+      // Major cities lead; then, near a known place, biased landmarks; then the remaining towns.
+      const majors = om.value.filter((p) => isMajor(p));
+      const towns = om.value.filter((p) => !isMajor(p));
       const ordered = near
-        ? [...ph.value.filter((p) => isNear(p, near)), ...om.value, ...ph.value.filter((p) => !isNear(p, near))]
-        : [...om.value, ...ph.value];
+        ? [...majors, ...ph.value.filter((p) => isNear(p, near)), ...towns, ...ph.value.filter((p) => !isNear(p, near))]
+        : [...majors, ...towns, ...ph.value];
       const out: Place[] = [];
       for (const p of ordered) {
-        if (!out.some((o) => haversine(o, p) < SAME_PLACE_M && o.name.toLowerCase() === p.name.toLowerCase())) out.push(p);
+        if (!out.some((o) => haversine(o, p) < SAME_PLACE_M && o.name.toLowerCase() === p.name.toLowerCase())) out.push(toPlace(p));
       }
       return out.slice(0, 8);
     },
