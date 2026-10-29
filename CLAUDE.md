@@ -100,8 +100,8 @@ src/
   app/        router.ts (hash routes, replace-navigation, goBack)  Root.tsx (providers,
               screen switch, discard-on-leave)  NoteRoute.tsx (one DocProvider per note)
   home/       Home.tsx  Timeline.tsx  Archive.tsx  HomeMenu.tsx  NoteCard.tsx  CardMenu.tsx
-              PinnedRow.tsx  UndoBar.tsx  RouteSketch.tsx  cardActions.tsx  format.ts
-              home.css  screens.css
+              PinnedRow.tsx  UndoBar.tsx  PendingUndo.tsx  CardList.tsx  RouteSketch.tsx
+              cardActions.tsx  format.ts  home.css  home-screens.css
   note/       NoteScreen.tsx (top bar, note menu)  TitleField.tsx  note.css  screen.css
   library/    types.ts (NoteMeta, NoteSummary)  summarize.ts  sections.ts (home buckets,
               search)  sketch.ts  text.ts (accent folding)  storage.ts + records.ts
@@ -118,7 +118,7 @@ src/
   ui/         store.tsx (DocProvider: state, focus, frozen viewDoc)
               usePlaceLookups.ts (top-down geocoding, retries)  usePersistence.ts
               ErrorBoundary.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx
-              PlacePicker.tsx  usePlaceSearch.ts  MobileToolbar.tsx
+              PlacePicker.tsx  usePlaceSearch.ts  MobileToolbar.tsx  useMenu.ts (shared ⋯ menus)
               RichText.tsx  Chips.tsx  NodeMenu.tsx  hover.ts  useFormula.ts
               views/ViewHost.tsx  views/collect.ts  views/MapView.tsx (lazy)
               views/CalendarView.tsx  views/TableView.tsx
@@ -341,8 +341,9 @@ Rules:
   the store's `viewDoc` holds that row's text as it was when editing began.
   Contexts, formulas in other rows, views and geocoding all read `viewDoc`, so
   a half-typed name (`@Lis`) is never looked up. It is resolved on blur.
-- Replacing the document (Import, Reset, another tab) clears the session's
-  lookup bookkeeping, so its places resolve again.
+- Replacing the document (another tab writing the same note) clears the
+  session's lookup bookkeeping, so its places resolve again. Each note has its
+  own provider, but all notes share one memoized `Services`.
 - Formulas get places through an async `resolvePlace(key)`, so a formula is
   simply *pending* while its place is being geocoded.
 - `memo.ts` deduplicates in-flight and completed calls for the session.
@@ -508,8 +509,8 @@ differences live in `src/platform/` and in CSS.
 | Output | A **debug APK** for sideloading. |
 | Data & network | `localStorage` persists in the WebView. The data APIs are HTTPS with permissive CORS, so they work from Capacitor's `https://localhost` origin unchanged. |
 | Phone toolbar | Soft keyboards have no Tab, and Backspace is unreliable. When a row is focused on a touch device (`pointer: coarse`), a toolbar sits at the bottom of the screen with outdent, indent, move up, move down, collapse and delete bullet, plus the view toggles. Its buttons `preventDefault` on pointer/mouse down so the editor keeps focus and the keyboard stays up. |
-| Export | Blob downloads don't work in a WebView. On native, `src/platform/export.ts` writes `livenotes.json` to the cache directory (`@capacitor/filesystem`) and opens the Android share sheet (`@capacitor/share`). On the web it downloads as before. Import uses `<input type=file>`, which Capacitor supports natively. |
-| Touch UI | On touch-only screens, the row view buttons move into the editing toolbar as 🗺️ 📅 ▦ toggles for the focused row, so rows keep their full width. Below 640 px the header is one row, and Export/Import/Reset sit behind a `⋯` menu. The page is full-bleed. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
+| Export | Blob downloads don't work in a WebView. On native, `src/platform/export.ts` writes the note as `<title>.json` (e.g. `weekend-trip.json`, else `livenotes.json`) to the cache directory (`@capacitor/filesystem`) and opens the Android share sheet (`@capacitor/share`). On the web it downloads as before. Import ("Import note" in Home's `⋯` menu) uses `<input type=file>`, which Capacitor supports natively. |
+| Touch UI | On touch-only screens, the row view buttons move into the editing toolbar as 🗺️ 📅 ▦ toggles for the focused row, so rows keep their full width. Below 640 px Home's header is the wordmark and `⋯` over a full-width search, New note is a floating button, and the note screen's actions sit in its `⋯` menu. The page is full-bleed. Maps pan with two fingers so one-finger scrolling still scrolls the page. The page honours safe-area insets (`viewport-fit=cover`). |
 
 **CI workflow:** on every push and on manual dispatch it runs:
 
@@ -576,7 +577,9 @@ Visual system: `DESIGN.md`.
 - In-app back uses `history.back()` when there is in-app history, otherwise it
   replaces the entry with home.
 - Redirects (an unknown or deleted note, the crash screen) replace rather than
-  push, so Android's back button always reaches home and then exits.
+  push, so back never lands on a note that is gone.
+- On Android, `@capacitor/app`'s back button goes through the same router:
+  back from a note returns to where you came from, and back from home exits.
 
 **Home** (`home/`):
 - Sections, from `homeSections`:
