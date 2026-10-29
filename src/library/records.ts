@@ -2,6 +2,23 @@
 import type { Doc } from '../model/types';
 import type { NoteMeta, NoteSummary } from './types';
 
+export const INDEX_KEY = 'livenotes:index:v1';
+/** The pre-library single document, adopted as a note at launch (legacy.ts). */
+export const LEGACY_KEY = 'livenotes:doc:v1';
+export const NOTE_PREFIX = 'livenotes:note:';
+export const noteKey = (id: string): string => NOTE_PREFIX + id;
+
+/** Ids of every stored note key; null when the storage can't enumerate keys (index rebuild is skipped). */
+export function storedNoteIds(store: { key?: (i: number) => string | null; length?: number }): string[] | null {
+  if (typeof store.key !== 'function' || typeof store.length !== 'number') return null;
+  const ids: string[] = [];
+  for (let i = 0; i < store.length; i++) {
+    const k = store.key(i);
+    if (k?.startsWith(NOTE_PREFIX)) ids.push(k.slice(NOTE_PREFIX.length));
+  }
+  return ids;
+}
+
 export const emptyDoc = (): Doc => ({
   version: 1,
   rootId: 'root',
