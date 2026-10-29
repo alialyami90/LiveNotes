@@ -145,6 +145,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
     } catch (e) {
       // Keep the legacy key so the next launch retries.
       console.warn('LiveNotes: could not save the migrated note', e);
+      discardOrphan(meta.id);
       pending.set(meta.id, doc);
       return;
     }
@@ -156,24 +157,24 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
     }
   }
 
-  function purgeStale() {
-    const t = now();
-    const keep = metas.filter((m) => m.deletedAt === undefined || t - m.deletedAt <= UNDO_WINDOW_MS);
-    if (keep.length === metas.length) return;
-    const dropped = metas.filter((m) => !keep.includes(m));
+  /** A note key with no index entry is a full-size copy that a later rebuild could resurface as a duplicate. */
+  const discardOrphan = (id: string) => {
     try {
-      writeIndex(keep);
-      for (const m of dropped) storage.removeItem(noteKey(m.id));
-    } catch (e) {
-      console.warn('LiveNotes: could not purge deleted notes', e);
-      metas = keep; // retried on the next launch
+      storage.removeItem(noteKey(id));
+    } catch {
+      // best effort: the storage is already failing
     }
-  }
+  };
 
   const add = (doc: Doc): NoteMeta => {
     const meta = metaFor(newId(), doc, now());
     storage.setItem(noteKey(meta.id), JSON.stringify(doc));
-    writeIndex([...metas, meta]);
+    try {
+      writeIndex([...metas, meta]);
+    } catch (e) {
+      discardOrphan(meta.id);
+      throw e;
+    }
     return meta;
   };
 
@@ -185,6 +186,18 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
       storage.removeItem(noteKey(id));
     }
   };
+
+  function purgeStale() {
+    const t = now();
+    const stale = metas.filter((m) => m.deletedAt !== undefined && t - m.deletedAt > UNDO_WINDOW_MS).map((m) => m.id);
+    if (stale.length === 0) return;
+    try {
+      drop(stale);
+    } catch (e) {
+      console.warn('LiveNotes: could not purge deleted notes', e);
+      metas = metas.filter((m) => !stale.includes(m.id)); // retried on the next launch
+    }
+  }
 
   const patch = (id: string, fn: (m: NoteMeta) => NoteMeta) => {
     if (!metas.some((m) => m.id === id)) return;

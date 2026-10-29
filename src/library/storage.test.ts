@@ -81,6 +81,25 @@ describe('migration and first launch', () => {
     expect(lib.read(lib.list()[0].id)).toEqual(legacy);
   });
 
+  it('a failed migration leaves no orphan note key, and the next launch retries cleanly', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const legacy = doc('Old note');
+    const store = memStore({ [LEGACY_KEY]: JSON.stringify(legacy) });
+    const set = store.setItem;
+    store.setItem = (k, v) => {
+      if (k === INDEX_KEY) throw new Error('quota');
+      set(k, v);
+    };
+    setup(store);
+    expect([...store.m.keys()].filter((k) => k.startsWith('livenotes:note:'))).toEqual([]);
+    store.setItem = set; // storage is healthy again
+    const { lib } = setup(store);
+    expect(lib.list()).toHaveLength(1);
+    expect(lib.read(lib.list()[0].id)).toEqual(legacy);
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    expect([...store.m.keys()].filter((k) => k.startsWith('livenotes:note:'))).toEqual([noteKey(lib.list()[0].id)]);
+  });
+
   it('survives every write failing at construction (first launch)', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const store = memStore();
@@ -238,6 +257,18 @@ describe('mutations', () => {
     expect(lib.read('nope')).toBeNull();
   });
 
+  it('create removes its note key when the index write fails', () => {
+    const { lib, store } = setup();
+    const set = store.setItem;
+    store.setItem = (k, v) => {
+      if (k === INDEX_KEY) throw new Error('quota');
+      set(k, v);
+    };
+    const before = store.m.size;
+    expect(() => lib.create(doc('Nope'))).toThrow('quota');
+    expect(store.m.size).toBe(before);
+  });
+
   it('mutating methods throw write failures to the caller', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { lib, store } = setup();
@@ -267,6 +298,30 @@ describe('purge on construction', () => {
     expect(next.list().find((m) => m.id === recent)?.deletedAt).toBeDefined();
     expect(store.m.has(noteKey(recent))).toBe(true);
   });
+
+  it('boundary: exactly 6000 ms is kept, 6001 ms is purged', () => {
+    const { lib, store, t } = setup();
+    const id = lib.create(doc('Edge')).id;
+    lib.softDelete(id);
+    t.now += 6000;
+    expect(setup(store, t).lib.list().some((m) => m.id === id)).toBe(true);
+    t.now += 1;
+    expect(setup(store, t).lib.list().some((m) => m.id === id)).toBe(false);
+    expect(store.m.has(noteKey(id))).toBe(false);
+  });
+
+  it('still lists the remaining notes when purging fails at construction', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { lib, store, t } = setup();
+    const gone = lib.create(doc('Gone')).id;
+    lib.softDelete(gone);
+    t.now += 7000;
+    store.setItem = () => {
+      throw new Error('blocked');
+    };
+    const next = setup(store, t).lib;
+    expect(next.list().some((m) => m.id === gone)).toBe(false);
+  });
 });
 
 describe('importDoc', () => {
@@ -276,6 +331,12 @@ describe('importDoc', () => {
     expect(lib.importDoc('{nope')).toBeNull();
     expect(lib.importDoc(JSON.stringify({ version: 1 }))).toBeNull();
     expect(lib.list()).toHaveLength(before);
+  });
+
+  it('keeps an imported title in the summary', () => {
+    const { lib } = setup();
+    const meta = lib.importDoc(JSON.stringify(doc('Imported title')))!;
+    expect(meta.summary.title).toBe('Imported title');
   });
 
   it('accepts a valid doc as a new note', () => {
