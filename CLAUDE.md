@@ -49,6 +49,11 @@ Principles we take from Embark:
 ## 2. Architecture
 
 ```
+   #/ · #/archive → Home / Archive (src/home)   ·   #/note/<id> → NoteScreen (src/note)
+            ┌──────── LibraryProvider (src/library): index of notes ────────┐
+            │  one DocProvider per open note, persisted to its own key      │
+            └───────────────────────────────┬────────────────────────────────┘
+                                            ▼
             ┌──────────────── React UI (src/ui) ────────────────┐
  keyboard → │ Outline → NodeRow → NodeEditor (raw text, focused)│
             │                    → RichText (chips, unfocused)   │
@@ -79,10 +84,11 @@ Principles we take from Embark:
 **Stack:** Vite + React + TypeScript (strict). Leaflet with OpenStreetMap tiles
 for maps. Vitest + Testing Library for tests. No backend.
 
-The app is **local-first**: the document lives in the browser, and the only
+The app is **local-first**: the notes live in the browser, and the only
 network calls are to free, keyless data APIs.
 
-**Rule of isolation:** `model/`, `syntax/`, `context/` and `formula/` are pure
+**Rule of isolation:** `model/`, `syntax/`, `context/`, `formula/` and the pure
+parts of `library/` (everything but `LibraryProvider.tsx`) are pure
 TypeScript with **no React and no `fetch`**. Everything that touches the network
 goes through the `Services` interface, so tests inject fakes. UI components stay
 thin.
@@ -91,21 +97,33 @@ thin.
 
 ```
 src/
+  app/        router.ts (hash routes, replace-navigation, goBack)  Root.tsx (providers,
+              screen switch, discard-on-leave)  NoteRoute.tsx (one DocProvider per note)
+  home/       Home.tsx  Timeline.tsx  Archive.tsx  HomeMenu.tsx  NoteCard.tsx  CardMenu.tsx
+              PinnedRow.tsx  UndoBar.tsx  RouteSketch.tsx  cardActions.tsx  format.ts
+              home.css  screens.css
+  note/       NoteScreen.tsx (top bar, note menu)  TitleField.tsx  note.css  screen.css
+  library/    types.ts (NoteMeta, NoteSummary)  summarize.ts  sections.ts (home buckets,
+              search)  sketch.ts  text.ts (accent folding)  storage.ts + records.ts
+              (index, note keys, migration, soft delete)  blank.ts  memoryStorage.ts
+              LibraryProvider.tsx (React: index state, undo delete)
   model/      types.ts  tree.ts (parent index, traversal)  ops.ts (pure edits)
               storage.ts (validate, load/save)  sample.ts (seed trip doc)
   syntax/     tokenize.ts (text → segments, escapes)  dates.ts (date recognition)
               mention.ts (mention under the caret)  plain.ts (chips → plain text)
-  context/    resolve.ts (effective place/date per node)
+  context/    resolve.ts (effective place/date per node, dayNumber)
   formula/    lexer.ts  parser.ts  evaluate.ts  values.ts  format.ts
-  library/    types.ts  summarize.ts  sections.ts  sketch.ts  text.ts (notes library, in progress)
   services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts  memo.ts
   platform/   export.ts (download on web, share sheet on Android)
-  ui/         store.tsx (DocProvider: state, focus, place lookups, persistence)
-              App.tsx  ErrorBoundary.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx
+  ui/         store.tsx (DocProvider: state, focus, frozen viewDoc)
+              usePlaceLookups.ts (top-down geocoding, retries)  usePersistence.ts
+              ErrorBoundary.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx
               PlacePicker.tsx  usePlaceSearch.ts  MobileToolbar.tsx
               RichText.tsx  Chips.tsx  NodeMenu.tsx  hover.ts  useFormula.ts
               views/ViewHost.tsx  views/collect.ts  views/MapView.tsx (lazy)
               views/CalendarView.tsx  views/TableView.tsx
+  styles/     tokens.css  base.css  chrome.css  outline.css  chips.css  views.css
+              touch.css  screens.css   (imported by styles.css, with the fonts)
   main.tsx  styles.css
 ```
 
@@ -133,6 +151,7 @@ interface Place { name: string; lat: number; lon: number; label?: string }
 
 interface Doc {
   version: 1;
+  title?: string;                    // the note's title; absent on notes from before the library
   rootId: NodeId;                    // invisible root; its children are top-level bullets
   nodes: Record<NodeId, OutlineNode>;
   places: Record<string, Place>;     // geocode results, keyed by normalized mention name
@@ -389,20 +408,25 @@ a marker or entry highlights the row.
   - `Ctrl/Cmd+.` toggles collapse.
 - **Bullets:** clicking the bullet collapses or expands. A small triangle shows
   that hidden children exist.
-- **Persistence:** saves are debounced (300 ms) to `localStorage["livenotes:doc:v1"]`.
-  - Pending saves are flushed on `pagehide` and when the tab becomes hidden.
-  - A `storage` event from another tab replaces the document, keeping focus
-    when that row still exists.
+- **Persistence** (`usePersistence.ts`): each note saves, debounced 300 ms, to
+  its own key `localStorage["livenotes:note:<id>"]` (§12).
+  - Pending saves are flushed on `pagehide`, when the tab becomes hidden, and
+    when the note is left (the provider unmounts), so leaving within 300 ms of
+    typing loses nothing.
+  - A `storage` event from another tab for the same note replaces its document,
+    keeping focus when that row still exists.
   - Loaded and imported JSON is validated as a full tree: every child exists,
-    there are no cycles or shared children, and `places` is an object. Anything
-    else falls back to the sample.
-  - If site data is blocked, the app runs without persistence.
-  - The header has Export/Import JSON buttons and a "Reset to sample" button.
-  - A top-level `ErrorBoundary` offers "Download saved data" and "Reset to
-    sample" instead of a blank page.
-- **First launch:** seeds a sample Portugal trip from `model/sample.ts` that
-  exercises every feature. Its places ship with real coordinates, so it works
-  instantly and offline.
+    there are no cycles or shared children, `places` is an object and `title`,
+    if present, is a string. A note that fails validation is not opened; the
+    app goes home instead.
+  - If site data is blocked, the app runs on in-memory storage for the session.
+  - A top-level `ErrorBoundary` offers "Download saved data" (every
+    `livenotes:*` key, raw, so even unparseable data is kept) and "Back to
+    notes" instead of a blank page. It never wipes the library.
+- **First launch:** the library seeds the sample Portugal trip from
+  `model/sample.ts`, titled "Portugal road trip (sample)". It exercises every
+  feature, and its places ship with real coordinates, so it works instantly
+  and offline.
 
 ---
 
@@ -442,8 +466,10 @@ npm run build
 - Pure functions return new objects. The model is never mutated in place.
 - Small files with one purpose each. If a file passes about 250 lines, split it.
 - Comments explain *why*, not *what*.
-- CSS lives in `styles.css` with CSS variables, and supports light and dark via
-  `prefers-color-scheme`.
+- CSS uses the design tokens in `src/styles/tokens.css` (type scale, spacing,
+  radii, shadows, colours) and supports light and dark via
+  `prefers-color-scheme`. `DESIGN.md` records the visual system; read it before
+  changing styles.
 
 ## 10. Roadmap
 
@@ -453,7 +479,9 @@ npm run build
    context resolution.
 3. **Formulas:** lexer, parser and evaluator, built-ins, live result chips.
 4. **Views:** map, calendar, table, linked hover.
-5. *Later:*
+5. **Library:** many notes, Timeline home, search, pin, archive, delete with
+   undo, note titles, visual system (§12, `DESIGN.md`).
+6. *Later:*
    - Document-level undo.
    - Re-pick a place from candidates.
    - Side-panel (pinned) views.
@@ -501,3 +529,70 @@ provider that permits app use.
 
 Local build, given an Android SDK: `npm run android:build`
 (build, sync, then `./gradlew assembleDebug`).
+
+---
+
+## 12. Notes library
+
+Design spec: `docs/superpowers/specs/2026-10-29-notes-library-design.md`.
+Visual system: `DESIGN.md`.
+
+**Storage** (`library/storage.ts`, pure over an injected `Storage`):
+
+| Key | Holds |
+|---|---|
+| `livenotes:index:v1` | `{ version: 1, notes: NoteMeta[] }` |
+| `livenotes:note:<id>` | that note's `Doc` |
+
+- A `NoteMeta` carries `id`, `createdAt`, `updatedAt`, `pinned?`, `archived?`,
+  `deletedAt?` and a `summary`. The summary holds the title, the date range,
+  up to 8 resolved places, the place names, a 140-character preview and the
+  folded search text. It is recomputed on every save, so home never parses
+  notes.
+- **Migration** runs once, when there is no index. The old single document
+  (`livenotes:doc:v1`) becomes the first note, and its key is removed only
+  after the index write succeeds. A failed write keeps the note in memory and
+  retries next launch. An index that fails validation is rebuilt by scanning
+  the note keys.
+- **`updatedAt` means "edited".** Only changes the user wrote (text, title,
+  structure, view, collapsed) touch it. Place-cache writes from geocoding
+  update the summary but not `updatedAt`, so just opening a note never
+  reorders Recent.
+- **Two tabs:** every index write first re-reads the stored index, so a stale
+  tab never overwrites another tab's notes. Home refreshes on `storage`
+  events for the index.
+- **Delete is soft first.** `deleteWithUndo` sets `deletedAt` and shows the
+  undo bar ("Note deleted · Undo") for 6 s. Expiry, a second delete, or the
+  app hiding (`pagehide`, or the tab becoming hidden) purges it. Construction
+  also purges anything deleted more than 6 s ago.
+- **Leaving a brand-new empty note discards it.** This applies to notes
+  created this session with no title and no text. Blankness is judged on the
+  editor's in-memory doc, so a failed save never deletes typed text.
+
+**Routes** (`app/router.ts`, hash-based so they work in the WebView):
+- `#/` is home, `#/note/<id>` a note, and `#/archive` archived notes.
+- In-app back uses `history.back()` when there is in-app history, otherwise it
+  replaces the entry with home.
+- Redirects (an unknown or deleted note, the crash screen) replace rather than
+  push, so Android's back button always reaches home and then exits.
+
+**Home** (`home/`):
+- Sections, from `homeSections`:
+  - Pinned chips.
+  - Upcoming: notes whose `to ≥ today`, sorted by `from`, in Today / This
+    week (through Sunday) / Next week / Later. Each hangs off a date stamp on
+    the orange rail.
+  - Recent: most recently edited first.
+  - An `Archive (n)` link.
+- Search folds accents and filters titles, text and place names into one list,
+  upcoming first.
+- New note is a floating button on phones and a header button on desktop. The
+  header `⋯` menu has Import note and Add sample note.
+- Cards show the route sketch, an inline SVG of the note's places in order
+  (no tiles, no network). Each card's `⋯` menu offers Pin, Archive and Delete.
+
+**Note screen** (`note/`):
+- Back, the title field (new notes open with the caret there; Enter moves to
+  the first bullet), then the outline.
+- The `⋯` menu has Pin, Archive, Export (named after the title; the share
+  sheet on Android) and Delete.
