@@ -36,7 +36,7 @@
   color: var(--ink);
   text-align: center;
 }
-.stamp__dow {
+.stamp__weekday {
   font-size: var(--fs-micro);
   line-height: var(--lh-micro);
   font-weight: 650;
@@ -78,6 +78,7 @@
   background: var(--accent);
 }
 .rail::after {
+  box-sizing: border-box; /* the reset skips pseudo-elements; content-box put the ring 2px off the line */
   content: '';
   position: absolute;
   bottom: 0;

@@ -330,8 +330,8 @@ out behind it. Add `.is-today` to turn the day number ember: large text, 4.75:1 
 and 8.06:1 in dark.
 
 ```html
-<div class="stamp is-today"><span class="stamp__dow">Thu</span><span class="stamp__day">29</span></div>
-<div class="stamp"><span class="stamp__dow">Dec</span><span class="stamp__day">20</span></div>
+<div class="stamp is-today"><span class="stamp__weekday">Thu</span><span class="stamp__day">29</span></div>
+<div class="stamp"><span class="stamp__weekday">Dec</span><span class="stamp__day">20</span></div>
 ```
 
 ### The rail (`.rail`), signature move
@@ -346,7 +346,7 @@ set `--rail-ground: var(--paper)` on it.
 <h2 class="section-head">Next week</h2>
 <ol class="rail">
   <li class="rail__item">
-    <div class="stamp"><span class="stamp__dow">Tue</span><span class="stamp__day">3</span></div>
+    <div class="stamp"><span class="stamp__weekday">Tue</span><span class="stamp__day">3</span></div>
     <div class="rail__cards"><!-- NoteCard(s) --></div>
   </li>
 </ol>
@@ -368,7 +368,11 @@ slides up 24px with a fade, 220ms `--ease-out`.
   `"archive"`) on each screen's root element. It enters with a fade and an 8px rise over
   160ms `cubic-bezier(0.16, 1, 0.3, 1)` (`--dur-screen`, `--ease-out`). It animates `top`
   on a relative box rather than `transform`, because a transformed ancestor would capture
-  the fixed FAB, toolbar and undo bar for those 160ms.
+  the fixed FAB, toolbar and undo bar for those 160ms. The animation runs once per
+  element, so each screen's root must be a new element (render it per route, or key it);
+  changing `data-screen` on an existing element does not replay it. Animating `top` is
+  layout work on the main thread; if it janks on low-end phones, move the rise to a
+  `translate` on an inner wrapper that holds no fixed chrome.
 - **Feedback:** 120ms (`--dur-fast`) border and opacity transitions on cards, pinned chips,
   header buttons and row menus.
 - **Reduced motion:** under `prefers-reduced-motion: reduce`, the screen entry and the
