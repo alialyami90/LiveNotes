@@ -5,13 +5,13 @@ the way of working that kept quality high so far. `CLAUDE.md` is the
 engineering spec and working agreement; this file is the "where we are and how
 we work" layer on top of it.
 
-Last updated: 2026-10-29, written for the state once Task 8 of the
-natural-phrases plan (browser checks, live checks, docs and its fix round) is
-integrated onto branch `ccr-0140cca5-y52lpq` and pushed.
+Last updated: 2026-10-29, written for the state once the final whole-branch
+review's fix wave of the natural-phrases work is done (in its worktree, before
+integration onto branch `ccr-0140cca5-y52lpq`).
 
 **Not done yet:**
 
-- the final whole-branch review of the natural-phrases work, and its fix wave
+- the scoped re-review of the final fix wave, and its integration and push
 - a CI run (Android APK and `live-check.yml`) on the pushed branch: not yet
   confirmed green
 
@@ -44,48 +44,62 @@ integrated onto branch `ccr-0140cca5-y52lpq` and pushed.
 The APK is at
 https://github.com/alialyami90/LiveNotes/releases/download/android-latest/livenotes-debug.apk
 
-### Built, waiting for the final review: natural-language routes and weather, place kinds, area search
+### Built, final review done, fix wave applied: natural-language routes and weather, place kinds, area search
 
 Spec (approved by the owner):
 `docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`.
 Plan: `docs/superpowers/plans/2026-10-29-natural-phrases-and-area-search.md`.
 Ledger: `.superpowers/sdd/2026-10-29-natural-phrases-and-area-search/progress.md`.
 All 8 tasks are implemented and passed their per-task reviews (Tasks 1, 4, 6, 7
-and 8 after one fix round). The final whole-branch review has not run yet.
+and 8 after one fix round). The final whole-branch review ran; its fix wave
+(brief and report: `final-fix-brief.md` and `final-fix-report.md` in the ledger
+folder) is applied. Its scoped re-review has not run yet.
 
 What shipped (CLAUDE.md §3.2, §4.3, §5, §6, §7 describe it):
 
 - **Phrases** (`syntax/phrases.ts`, `scan.ts`): "weather"/"forecast" and
   "<mode> to @X" / "<mode> from @A to @B" are recognised in plain text. Whole
-  words only, never inside URLs, emails or compounds. `\weather` escapes.
+  words only, never inside URLs, emails, compounds or possessives. `\weather`
+  escapes. A bullet whose formula already calls `weather(` (or `route(` /
+  `travel(`) keeps those phrase words plain, so old notes show one chip. A
+  later "to @X" in a bullet starts from the route before it (chained routes).
 - **`travel` built-in** (`formula/travel.ts`): drive (OSRM), walk and bike
   (≈, from the road distance, error over 100 km), transit (distance plus a
   Google Maps Directions link), fly (great circle, offline). Phrases run as
   synthetic formulas, so pending, errors and memoising are shared.
-- **Chips:** weather chips replace the word; travel chips follow the
-  destination; a Travel column in the table view.
+- **Chips:** weather chips replace the word (a bullet with no place or no
+  date keeps the plain word, with a tooltip); travel chips follow the
+  destination with a 4px gap; a Travel column in the table view.
 - **Travel-mode popup** (`ui/ModePicker.tsx`, `ui/useModePicker.ts`): after a
-  pick or a typed boundary character in "to @X" with no mode word. It writes
-  the mode word into the text.
+  pick or a typed boundary character in "to @X" with no mode word. It opens
+  with no row selected: Enter, Tab and Shift+Tab then dismiss it and do their
+  normal job; ↓/↑ or a moving pointer select a row. It writes the mode word
+  into the text.
 - **Place kinds** (`services/kinds.ts`): `Place.kind` and `Place.extent`,
   icons on chips, picker rows and map tooltips.
 - **Area search** (`services/http.ts`, `rank.ts`): search and geocode inside the
   parent place's area first; the picker's "Elsewhere" divider; staged
-  `onUpdate`; no guessed place stored after a transient failure.
+  `onUpdate`. A nearby Open-Meteo town beats an in-area namesake (`@Sitges`
+  under Barcelona is the town). No guessed place is stored after a transient
+  failure: if Open-Meteo fails, or the area stage fails and the worldwide
+  result lies outside the area, geocode throws `TransientError` and retries.
+  A region parent without an extent has no area.
 - **Sample note:** "— drive from @Lisbon to @Porto" and "Porto weather" replace
-  the formulas that showed the same facts.
+  the formulas that showed the same facts. Its places carry kinds, so it shows
+  icons, and its "How this works" bullet and the editor legend mention the
+  plain-word phrases.
 - **Browser check:** `scripts/e2e.cjs` reads its port from `E2E_PORT`; its
   stubs model Photon's `bbox`, `osm_key`/`osm_value`/`extent` and Open-Meteo's
   population and feature codes.
 
-Local verification at the end of Task 8 (its worktree, before integration):
+Local verification at the end of the final fix wave (its worktree, before
+integration):
 
 - typecheck clean
-- **713** unit/UI tests pass (12 live tests skipped); the only noise is the
-  pre-existing jsdom "Not implemented: Window's alert()" line
+- **746** unit/UI tests pass (12 live tests skipped); the test output is
+  clean (the jsdom alert() line is gone)
 - build OK
-- the browser check passes **75/75** (57 earlier plus 18 new) on desktop and
-  Pixel 7, light and dark
+- the browser check passes **80/80** on desktop and Pixel 7, light and dark
 - the live checks have never run against the real APIs; their first run is
   the CI run on the pushed branch
 
@@ -95,10 +109,10 @@ Local verification at the end of Task 8 (its worktree, before integration):
    `live-check.yml` (its new cases: an airport among the inside rows near
    Barcelona, a cafe near Lisbon, Photon's extent order). Read the live-check
    logs: they print the rows Photon returned.
-2. **Final whole-branch review** on the most capable model, against the spec
-   and the plan (base `207fd08`). Ask it to trace the geocode transient paths
-   and the popup's arm/dismiss rules. Then one fix wave and a scoped
-   re-review. The ledger lists the deferred minors to weigh.
+2. **Scoped re-review of the final fix wave** (the final whole-branch review
+   and its fix wave are done). Deferred to a later wave: combobox ARIA wiring
+   on the textarea, PPLX → neighbourhood, the ±180° wrap, the test-strength
+   items, `keepEditorFocus` dedupe, and `travel()` mode case sensitivity.
 3. Run the gate and the browser check again, push, and confirm CI again.
 4. Raise the open owner items in §5.
 5. `superpowers:finishing-a-development-branch`.
@@ -307,20 +321,14 @@ From the natural-phrases work:
   won't open, though picking from the place picker still does), that tapping a
   row keeps the keyboard up, and that "Directions ↗" opens Maps or the browser
   from the APK.
-- **`@Sitges` under `@Barcelona`.** A town just outside the ±30 km box can
-  resolve to an in-area place with the same name instead of the town (built to
-  spec §6.3, "inside first"). Picking from the list always gets the town.
-  Decide whether that trade-off is right.
-- **An undated "weather" in ordinary prose** shows a red "no date here" chip
-  ("Pack for the weather @Lisbon" with no date above it). Built as the spec
-  says. Recommendation: show the plain word when the bullet has no date or
-  place.
+- **The weather word becomes the chip (I2).** The fix wave keeps the owner's
+  choice that "the word becomes a chip" when there is a forecast to show, and
+  shows the plain word (with a tooltip) when the bullet has no place or no
+  date. Open question for the owner: keep that, or switch to "keep the word
+  and add the chip after it"?
 - **A stray `vite preview` on port 4176** from an earlier session (cwd the main
   checkout) still runs. It serves an old build. Stop it by PID, or keep using
   `E2E_PORT`.
-- **The sample's "How this works" bullet and the editor's footer hint** still
-  teach only `@`, dates, `{formulas}` and `/views`. They don't mention the
-  plain-word phrases yet.
 
 ---
 
@@ -346,8 +354,9 @@ Where each part lives, for the final review and later changes:
   - `src/services/http.ts`: `openMeteo()`, `photon()` (with `bbox`), the queue,
     `geocode` (area first, transient rules) and staged `search` with
     `onUpdate`.
-  - `rank.ts`: `mergeSearch`, `isNear`, `isMajor`, `toPlace`.
-  - `geo.ts`: `haversine`, `areaOf`, `inArea`.
+  - `rank.ts`: `mergeSearch`, `areaPick` (the area step), `isNear`, `isMajor`, `toPlace`.
+  - `geo.ts`: `haversine`, `areaOf`, `searchArea` (none for a region without extent), `inArea`.
+  - `wmo.ts`: weather codes to condition and icon.
   - `kinds.ts`: `kindOfPhoton`, `kindOfOpenMeteo`, `isStreetTag`,
     `photonExtent`, `placeIcon`.
   - `types.ts`: `Services`, `Found`, `SearchOptions`.

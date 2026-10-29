@@ -1,6 +1,8 @@
 # Natural-language routes and weather, place kinds, area search: design
 
-Status: approved by the owner (2026-10-29). Product truth: `PRODUCT.md`.
+Status: approved by the owner (2026-10-29), amended by the final review's fix
+wave (chained routes, formula suppression, the plain weather word, the popup's
+no-initial-selection, area-step and transient rules). Product truth: `PRODUCT.md`.
 Engineering spec: `CLAUDE.md`.
 
 ## 1. What the owner asked for (confirmed answers)
@@ -27,7 +29,17 @@ Recognition runs in `tokenize`, after places and formulas are found. It never
 looks inside `{…}`, and escaped text (`\@`) is never part of a phrase. All words
 match whole words, case-insensitively. A backslash right before a phrase word
 (`\weather`, `\drive`) keeps it plain text. `displayText` hides that backslash,
-the same way it hides the existing `\@` and `\{` escapes.
+the same way it hides the existing `\@` and `\{` escapes, but not one inside a
+word or after `:` or `/` (`C:\bus`). A possessive (`weather's`) is not a
+phrase word.
+
+**A formula already says it.** When the bullet has a formula whose source calls
+`weather(` (case-insensitive), its weather words stay plain text. When it has one
+calling `route(` or `travel(`, its route phrases stay plain: the mode word gets
+no `mode` field and there is no route segment. Notes written before phrases
+existed (`Nov 3 — drive to @Porto {route(@Lisbon, here)}`,
+`Forecast in Porto: {weather()}`) therefore still show one chip, not two or a
+red "no previous place".
 
 ### 2.1 Weather words
 
@@ -62,9 +74,16 @@ an extra, zero-width segment placed right after the destination place:
 type Mode = 'drive' | 'walk' | 'transit' | 'bike' | 'fly';
 ```
 
-`fromKey` is absent for "to @X". Evaluation then uses the previous stop: the
-same `prev` rule as formulas (the previous sibling's effective place, else the
-parent's place).
+`fromKey` is absent for the first "to @X" in a bullet. Evaluation then uses the
+previous stop: the same `prev` rule as formulas (the previous sibling's effective
+place, else the parent's place).
+
+**Chained routes.** A later "to @X" in the same bullet, with no "from", gets
+`fromKey` set to the destination of the route before it. "drive to @Coimbra then
+walk to @[Museu Machado]" walks from Coimbra
+(`travel("walk", @[coimbra], @[museu machado])`), and "Car from @Lisbon to
+@Porto, then train to @Braga" takes the train from Porto. A "from @A to @B"
+route always starts at A.
 
 The mode word stays a plain text segment. The editor's mirror colours it like a
 formula, so the user can see it was recognised.
@@ -134,6 +153,12 @@ Formatting (`formula/format.ts`):
 - A weather segment is shown as a weather chip in place of the word, e.g.
   `☀ Sunny 22°/14°`. Pending and error states look like formula chips. The
   error popover (tap) works the same way.
+- When the bullet has no effective place, or no effective date, the word is not
+  a request for a forecast ("Q4 sales forecast review"): it stays the plain
+  word, with the tooltip "No place here for a forecast" or "No date here for a
+  forecast", and no chip. This is decided in the UI from the node's context;
+  the formula engine is unchanged, so a written `{weather()}` still shows its
+  error chip.
 - A route segment is shown as a travel chip right after the destination chip.
   "Directions ↗" is a separate link inside the chip, at least 44 px on phones.
   It opens in a new tab on the web; on Android it goes to the system browser or
@@ -165,7 +190,15 @@ rows in this fixed order:
 
 **Choosing.**
 
-- Tap a row, or use ↑/↓ then Enter or Tab.
+- The popup opens with **no row selected** (no option is `aria-selected`).
+- While nothing is selected, Enter, Tab and Shift+Tab dismiss the popup (the
+  phrase is recorded as dismissed, as with Escape) and then do their normal
+  editor job: split or insert a bullet, indent, outdent. So Enter right after a
+  pick ("Back to @por" → Porto) makes a new bullet; it never writes "drive".
+- ↓ selects the first row (Drive), ↑ the last (Fly). Moving the pointer over a
+  row selects it; a row that merely appears under a resting cursor is not
+  selected.
+- Tap a row, or select one and press Enter or Tab.
 - Choosing inserts the mode's word and a space before "to" (or "from").
 - The caret keeps its place relative to the text.
 - The phrase is then recognised (§2.2).
@@ -246,6 +279,10 @@ The parent place is the bullet's inherited place (the existing
 - Otherwise use a box reaching 30 km from it in each direction.
 - An extent larger than about 400 km across (a country or region) is used as
   is. Photon handles large boxes.
+- A `region` parent with no valid extent (a country geocoded by Open-Meteo) has
+  no area: a 30 km box around a country's centre means nothing. Search and
+  geocode then skip the area stages and the section split, and behave as the
+  plain biased search.
 
 ### 6.2 Picker search (`search`)
 
@@ -276,12 +313,18 @@ Order of preference:
 
 1. An Open-Meteo top match that is a major city (population ≥ 100k), or a town
    inside the area. This keeps the @Dammam-under-Riyadh rule.
-2. The best non-`street` Photon result inside the area (bbox query).
+2. The first Photon result inside the area (bbox query) whose icon kind is not
+   `street`, but only when there is no Open-Meteo town match, or that match is
+   not a settlement within 75 km of the parent. A real town nearby beats an
+   in-area place that merely shares its name.
 3. The existing biased worldwide Photon result, subject to the existing street
-   and far-namesake rules.
+   and far-namesake rules. If the area stage failed transiently, this result is
+   accepted only when it lies inside the area; otherwise `TransientError`, so
+   the retry schedule runs again and no guess is stored.
 
 So @airport under @Barcelona becomes Barcelona–El Prat, not a town called
-"Airport".
+"Airport" (Open-Meteo's "Airport" is far away), and @Sitges under @Barcelona is
+the town about 35 km away, not an in-area restaurant called Sitges.
 
 ### 6.4 Network discipline
 
@@ -301,11 +344,13 @@ The extra bbox request is one more queued Photon call per picker search. The
 
 | Situation | Behaviour |
 |---|---|
-| "weather" in a bullet with no place, or no date | Error chip "no place here" / "no date here", same as `weather()` today. |
+| "weather" in a bullet with no place, or no date | The plain word, with the tooltip "No place here for a forecast" / "No date here for a forecast". No chip. A written `{weather()}` keeps its error chip. |
+| "weather" in a bullet whose formula calls `weather(` | Plain word; the formula's chip is the forecast. Likewise route phrases next to a `route(` or `travel(` formula. |
 | A forecast more than about 16 days ahead | "no forecast yet" |
 | A route to the same place as the previous stop | Travel chip with 0 m; drive shows "0 min". |
 | "from @A to @B" where A or B is unresolved | Pending `…`, then the place's own error. |
-| Several route phrases in one bullet | Each gets its own chip after its destination. |
+| Several route phrases in one bullet | Each gets its own chip after its destination. A later "to @X" starts from the previous route's destination. |
+| Enter or Tab right after the popup opens | Nothing is selected, so the popup closes and the key splits, inserts or indents as usual. |
 | "weather" inside `{…}` or written as `\weather` | Not recognised. `\` escapes the word the same way it escapes `@` and `{`. |
 | A mode popup while the place picker is open | Only the place picker shows. The mode popup can open after the pick. |
 | Offline | Weather and drive/walk/bike/transit chips show the existing "unavailable", retrying error. Fly works offline once both places are known. |

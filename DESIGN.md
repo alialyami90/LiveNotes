@@ -295,11 +295,14 @@ Soft rectangles that get rounder as they get smaller and more tappable.
   ✈️ airport, 🚉 station. Streets, unknown kinds and places saved before kinds keep 📍.
   Picker rows and map marker tooltips show the same icon.
 - **Phrase chips:** weather and travel results are formula chips (green). A weather word
-  is replaced by its chip (`⛅ 22° / 14°`). A travel chip follows the destination and
-  starts with the mode icon: `🚗 3h 05m · 313 km`, `🚶 ≈ 1h 13m · 5.8 km`,
+  is replaced by its chip (`⛅ 22° / 14°`); in a bullet with no place or no date it stays
+  the plain word, with a tooltip saying why, and no red chip. A travel chip follows the
+  destination with a `--sp-1` (4px) gap (any chip directly after a place chip gets it, in
+  every state), and starts with the mode icon: `🚗 3h 05m · 313 km`, `🚶 ≈ 1h 13m · 5.8 km`,
   `🚲 ≈ 24 min · 6.1 km`, `🚆 313 km · Directions ↗`, `✈ 503 km`. "≈" marks an estimate.
 - **Directions link** (`.chip-link`): inside the transit chip, in the chip's own ink,
-  underlined with a 2px offset. On touch its `::before` makes a 44px-tall hit area
+  underlined with a 2px offset. Its accessible name is "Public transport directions in
+  Google Maps (opens in a new tab)". On touch its `::before` makes a 44px-tall hit area
   without changing the chip's line box.
 - **States:** pending shows a dashed outline in the chip's own ink, and for formulas a
   dashed border. Unreachable shows a dashed red outline plus ⟳. Not found shows the error
@@ -316,8 +319,10 @@ Soft rectangles that get rounder as they get smaller and more tappable.
   border and the word "Elsewhere" in micro capitals, soft ink. It separates the rows
   inside the parent's area from the rest.
 - **Travel-mode popup** (`.picker-modes`): five one-line rows, mode icon then label
-  (🚗 Drive, 🚶 Walk, 🚆 Public transport, 🚲 Bike, ✈ Fly). The active row takes the
-  formula wash and ink, like the mode word it writes.
+  (🚗 Drive, 🚶 Walk, 🚆 Public transport, 🚲 Bike, ✈ Fly). It opens with **no row
+  highlighted**, so Enter and Tab keep their editor meaning; ↓, ↑ or moving the pointer
+  over a row highlights it. The active row takes the formula wash and ink, like the mode
+  word it writes.
 - **Editor highlight:** a recognised mode word (`.hl-mode`) and a weather word
   (`.hl-weather`) take the formula wash, colour only.
 

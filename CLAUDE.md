@@ -119,8 +119,9 @@ src/
   context/    resolve.ts (effective place/date per node, dayNumber)
   formula/    lexer.ts  parser.ts  evaluate.ts  values.ts  format.ts
               travel.ts (travel built-in, Directions URL, phrase → formula source)
-  services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts (haversine, areaOf)
-              rank.ts (picker merge, near/major rules)  kinds.ts (place kinds, icons)  memo.ts
+  services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts (haversine, areaOf,
+              searchArea)  rank.ts (picker merge, near/major rules, areaPick)  kinds.ts
+              (place kinds, icons)  wmo.ts (weather codes)  memo.ts
   platform/   export.ts (download on web, share sheet on Android)
   ui/         store.tsx (DocProvider: state, focus, frozen viewDoc)
               usePlaceLookups.ts (top-down geocoding, retries)  usePersistence.ts
@@ -194,8 +195,8 @@ segments. `Segment` is one of the following:
 | `date` | `2026-11-03`, `Nov 3`, `3 Nov`, `November 3, 2026`, `Nov 3 2026` | Without a year, the year is inferred in `context/` (§3.3). |
 | `formula` | `{ … }` | Braces nest-count. An unclosed `{` is plain text. |
 | `weather` | `weather` or `forecast` | Runs as `weather()` (§4.3). |
-| `route` | a mode word, then `to @X` or `from @A to @B` | Zero-width (`raw: ''`), placed right after the destination place. Carries `mode`, `toKey` and, for "from", `fromKey`. |
-| escape | `\@`, `\{`, and `\` before a phrase word (`\weather`, `\drive`) | Stays literal text (backslash hidden when rendered by `displayText`). A backslash inside a word (`C:\Docs\train`) is kept. |
+| `route` | a mode word, then `to @X` or `from @A to @B` | Zero-width (`raw: ''`), placed right after the destination place. Carries `mode`, `toKey` and a `fromKey` for "from", or for a later route in the same bullet (chained). |
+| escape | `\@`, `\{`, and `\` before a phrase word (`\weather`, `\drive`) | Stays literal text (backslash hidden when rendered by `displayText`). A backslash inside a word or after `:` or `/` (`C:\Docs\train`, `C:\bus`) is kept. |
 
 Concatenating every `raw`/`text` reproduces the input.
 
@@ -216,12 +217,22 @@ phrases. Inside a formula, `@Name` is a place literal.
 
 - Phrase words match whole words, in any case. They never match inside URLs,
   emails or compounds (`weather.com`, `ali@weather.com`, `weather-proof`,
-  `weather_report`). Sentence punctuation (`weather.`, `(weather)`) still
-  matches.
+  `weather_report`), nor as a possessive (`weather's`). Sentence punctuation
+  (`weather.`, `(weather)`) still matches.
 - The spaces inside a phrase never cross a line break: `drive\nto @Porto` is
   not a route.
 - `to @X` with no mode word is plain text and shows no route. So is a mode word
   that isn't directly before `to`/`from` ("drive carefully").
+- **A formula already says it.** When the bullet has a formula calling
+  `weather(`, its weather words stay plain text; when it has one calling
+  `route(` or `travel(`, its route phrases stay plain (no `mode`, no route
+  segment). Matched case-insensitively. So notes written before phrases
+  (`Nov 3 — drive to @Porto {route(@Lisbon, here)}`,
+  `Forecast in Porto: {weather()}`) still show one chip.
+- **Chained routes.** A later `to @X` in the same bullet starts from the
+  destination of the route before it: `drive to @Coimbra then walk to
+  @[Museu Machado]` walks from Coimbra. The first route uses `prev`; a
+  `from @A to @B` route always starts at A.
 - `plainText` keeps the weather word and drops route segments, so calendar
   labels and previews read as written.
 
@@ -250,7 +261,8 @@ This makes the following work:
 `prev` is the effective place of the **previous sibling**, or the parent's place
 when the node is the first child. That gives "how do I get here from the last
 stop" without explicit references. A route phrase without "from"
-(`drive to @Porto`) starts from `prev` too.
+(`drive to @Porto`) starts from `prev` too, unless an earlier route in the same
+bullet ended somewhere (§3.2, chained routes).
 
 ---
 
@@ -333,10 +345,15 @@ stands for, and the chip's hover title shows it:
 | `weather`, `forecast` | `weather()` |
 | `walk to @Porto` | `travel("walk", prev, @[porto])` |
 | `drive from @Lisbon to @Porto` | `travel("drive", @[lisbon], @[porto])` |
+| `drive to @Coimbra then walk to @[Museu Machado]` | `travel("drive", prev, @[coimbra])`, `travel("walk", @[coimbra], @[museu machado])` |
 
 So pending chips, error chips, memoising and waiting for a mention's lookup all
-work as they do for formulas. An undated `weather` shows the error chip "no date
-here", and one without a place shows "no place here".
+work as they do for formulas. A weather word in a bullet with no effective
+place, or no effective date, is not a request for a forecast: it renders as the
+plain word, with the tooltip "No place here for a forecast" or "No date here for
+a forecast" (`RichText`, from the node's context; the engine is unchanged, so a
+written `{weather()}` still shows its error chip). Every other failure ("no
+forecast yet", "weather unavailable") shows the error chip.
 
 ### 4.4 Evaluation
 
@@ -371,10 +388,12 @@ interface SearchOptions { signal?: AbortSignal; onUpdate?: (found: Found[]) => v
 | Routing | `https://router.project-osrm.org/route/v1/driving/{lon,lat};{lon,lat}?overview=full&geometries=geojson` |
 | Map tiles | `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, with OSM attribution shown |
 
-**The parent's area** (`geo.ts` `areaOf`). The parent place is the bullet's
-inherited place. Its area is its `extent` when that is a valid box, else a box
-reaching 30 km from it in each direction. A large extent (a country) is used as
-is.
+**The parent's area** (`geo.ts` `areaOf`, `searchArea`). The parent place is
+the bullet's inherited place. Its area is its `extent` when that is a valid box,
+else a box reaching 30 km from it in each direction. A large extent (a country)
+is used as is. A `region` parent with no valid extent (a country geocoded by
+Open-Meteo) has **no** area: search and geocode skip the area stages and the
+section split, and behave as the plain biased search.
 
 **How a mention is resolved (`geocode`).**
 
@@ -385,14 +404,20 @@ is.
    - it is a major city (population ≥ 100k), so `@Dammam` under Riyadh means
      the city, not a local namesake (a live check found exactly this)
    - it lies inside the parent's area
-3. Otherwise ask Photon inside the area (`bbox`, limit 5) and use its best
-   result that is not a street. So `@airport` under `@Barcelona` is
-   Barcelona–El Prat, not a town called "Airport".
+3. Otherwise ask Photon inside the area (`bbox`, limit 5) and use its first
+   result whose icon kind is not `street` (so not a school or other unknown
+   kind either), but only when there is no Open-Meteo town, or the town is
+   not a settlement within 75 km of the parent (`rank.ts` `areaPick`). So
+   `@airport` under `@Barcelona` is Barcelona–El Prat, not a far town called
+   "Airport", and `@Sitges` is the town 35 km away, not an in-area
+   restaurant called Sitges.
 4. Otherwise use the town if it is within 75 km of the parent, but only if
    the area stage did not fail transiently.
 5. Otherwise ask Photon worldwide, biased to the parent place, and use its top
    result unless it is a street and there is a town. This still runs when the
-   area stage failed.
+   area stage failed, but then its result is used only if it lies inside the
+   area; otherwise `TransientError`, so the lookup retries. No guess is stored
+   while a source that could overrule it was down.
 6. Otherwise use the far town, but only if neither Photon stage failed
    transiently.
 7. Otherwise return `null` when every source answered with nothing, or throw
@@ -550,7 +575,14 @@ a marker or entry highlights the row.
       closes `@[…]`, not while an IME is composing, and not while the caret is
       still inside an @mention. Never after "next to", "close to" or
       "near to", or when a mode word is already there.
-    - Tap a row, or `↑`/`↓` then `Enter`/`Tab`. Choosing inserts the mode's
+    - It opens with **no row selected**. While nothing is selected, `Enter`,
+      `Tab` and `Shift+Tab` dismiss it (like `Escape`) and then do their
+      normal job: split or insert a bullet, indent, outdent. So `Enter`
+      right after a pick makes a new bullet. `↓` selects the first row
+      (Drive), `↑` the last (Fly), and a pointer moving over a row selects
+      it (a row that merely appears under a resting cursor is not
+      selected).
+    - Tap a row, or select one and press `Enter`/`Tab`. Choosing inserts the mode's
       word and a space before "to" (or "from"), and the caret keeps its place
       in the text: `to @Porto` becomes `drive to @Porto`.
     - It closes on any text change (Android's keyCode 229 input included), on
@@ -563,7 +595,8 @@ a marker or entry highlights the row.
 - **Unfocused node:** `RichText`. Places become chips (dashed while unresolved,
   red if not found) with their kind icon, dates become chips, and formulas
   become result chips. The raw formula appears on hover. A weather word becomes
-  a weather chip in its place. A route phrase keeps its words and gains a
+  a weather chip in its place (or stays a plain word with a tooltip when the
+  bullet has no place or no date). A route phrase keeps its words and gains a
   travel chip right after the destination. Transit's chip holds a separate
   "Directions ↗" link: a plain `<a target="_blank" rel="noopener noreferrer">`
   whose click doesn't open the editor, with a 44 px hit area on touch.
