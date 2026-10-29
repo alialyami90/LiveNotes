@@ -96,7 +96,9 @@
   align-items: start;
 }
 .rail__item > .stamp { position: relative; justify-self: center; }
-.rail__cards { display: grid; gap: var(--sp-2); min-width: 0; }
+/* minmax(0, 1fr), as on .rail: an implicit auto track grows to the card's nowrap places line and
+   widens a phone's layout viewport past the screen. */
+.rail__cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); min-width: 0; }
 
 /* Same breakpoint as the shrunken route sketch in home.css: phones up to 440 px. */
 @media (max-width: 440px) {
