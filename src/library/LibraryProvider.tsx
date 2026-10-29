@@ -24,6 +24,12 @@ interface LibraryValue {
    * Returns whether the write went through.
    */
   attempt(what: string, run: () => void): boolean;
+  /** The note editor's save outcome; a note left with a failed save has no banner to show it. */
+  reportSave(id: string, ok: boolean): void;
+  /** True once if a note was left with its last save failed; Home then tells the user. */
+  takeUnsaved(): boolean;
+  /** Removed for good by this tab's delete: the editor's leaving flush must not bring it back. */
+  wasRemoved(id: string): boolean;
 }
 
 /** One wording for every storage failure the user is told about. */
@@ -88,30 +94,13 @@ export function LibraryProvider({ children, storage, today = localToday() }: Pro
     [refresh],
   );
 
+  // Only this tab's own delete is made final; construction sweeps any older leftovers.
   const expireDelete = useCallback(() => {
-    if (pendingRef.current === null) return;
-    setPendingDelete(null);
-    quietly('delete the note', () => library.purgeDeleted());
-  }, [library, quietly]);
-
-  const deleteWithUndo = useCallback(
-    (id: string) => {
-      // Only one undo at a time: a second delete makes the first one final.
-      const previous = pendingRef.current;
-      setPendingDelete(id);
-      quietly('delete the note', () => {
-        if (previous !== null && previous !== id) library.purgeDeleted();
-        library.softDelete(id);
-      });
-    },
-    [library, quietly],
-  );
-
-  const undoDelete = useCallback(() => {
     const id = pendingRef.current;
     if (id === null) return;
+    pendingRef.current = null;
     setPendingDelete(null);
-    quietly('restore the note', () => library.undoDelete(id));
+    quietly('delete the note', () => library.purge(id));
   }, [library, quietly]);
 
   const attempt = useCallback(
@@ -129,6 +118,59 @@ export function LibraryProvider({ children, storage, today = localToday() }: Pro
     },
     [refresh],
   );
+
+  const removed = useRef(new Set<string>());
+  const wasRemoved = useCallback((id: string) => removed.current.has(id), []);
+
+  const deleteWithUndo = useCallback(
+    (id: string) => {
+      // Only one undo at a time: a second delete makes the first one final (and frees its space).
+      if (pendingRef.current !== null && pendingRef.current !== id) expireDelete();
+      try {
+        library.softDelete(id);
+      } catch (e) {
+        // Marking deletedAt grows the index, so a full storage refuses it. No undo bar then:
+        // it would say "Note deleted" over a card that is still there. A hard remove shrinks
+        // the index, so it can free space, but it cannot be undone, hence the confirm.
+        console.warn('LiveNotes: could not delete the note', e);
+        if (confirm('Storage is full. Delete this note permanently now?')) {
+          attempt('delete the note', () => {
+            library.remove(id);
+            removed.current.add(id);
+          });
+        } else {
+          refresh();
+        }
+        return;
+      }
+      pendingRef.current = id;
+      setPendingDelete(id);
+      refresh();
+    },
+    [library, expireDelete, attempt, refresh],
+  );
+
+  const undoDelete = useCallback(() => {
+    const id = pendingRef.current;
+    if (id === null) return;
+    pendingRef.current = null;
+    setPendingDelete(null);
+    quietly('restore the note', () => library.undoDelete(id));
+  }, [library, quietly]);
+
+  // A ref, not state: the leaving note's final flush runs in its unmount cleanup, just before
+  // Home's effect reads this, and a state update would only arrive a render later.
+  const unsaved = useRef(new Set<string>());
+  const reportSave = useCallback((id: string, ok: boolean) => {
+    if (ok) unsaved.current.delete(id);
+    else unsaved.current.add(id);
+  }, []);
+  const takeUnsaved = useCallback(() => {
+    // A note deleted for good has nothing left to save.
+    const any = [...unsaved.current].some((id) => library.list().some((m) => m.id === id));
+    unsaved.current.clear();
+    return any;
+  }, [library]);
 
   // Leaving the app ends the undo window (spec §2), so a delete is never left half-done.
   useEffect(() => {
@@ -152,8 +194,14 @@ export function LibraryProvider({ children, storage, today = localToday() }: Pro
   }, [library, refresh]);
 
   const value = useMemo(
-    () => ({ metas, library, today, refresh, isNewThisSession, pendingDelete, deleteWithUndo, undoDelete, expireDelete, attempt }),
-    [metas, library, today, refresh, isNewThisSession, pendingDelete, deleteWithUndo, undoDelete, expireDelete, attempt],
+    () => ({
+      metas, library, today, refresh, isNewThisSession, pendingDelete, deleteWithUndo, undoDelete, expireDelete, attempt,
+      reportSave, takeUnsaved, wasRemoved,
+    }),
+    [
+      metas, library, today, refresh, isNewThisSession, pendingDelete, deleteWithUndo, undoDelete, expireDelete, attempt,
+      reportSave, takeUnsaved, wasRemoved,
+    ],
   );
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }

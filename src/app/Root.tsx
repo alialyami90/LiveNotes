@@ -6,7 +6,7 @@ import type { Services } from '../services/types';
 import { memoize } from '../services/memo';
 import { httpServices } from '../services/http';
 import { isBlankDoc } from '../library/blank';
-import { LibraryProvider, useLibrary } from '../library/LibraryProvider';
+import { LibraryProvider, storageFailure, useLibrary } from '../library/LibraryProvider';
 import { memoryStorage } from '../library/memoryStorage';
 import { Archive } from '../home/Archive';
 import { Home } from '../home/Home';
@@ -39,6 +39,7 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
   const onDoc = useCallback((id: string, doc: Doc) => void lastDocs.current.set(id, doc), []);
   useDiscardOnLeave(route, lastDocs.current);
   useExpireUndoOnOpen(route);
+  useAlertUnsavedOnLeave(route);
   if (route.name === 'note') {
     return <NoteRoute key={route.id} id={route.id} storage={storage} services={services} onDoc={onDoc} />;
   }
@@ -48,6 +49,18 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
       <PendingUndo />
     </>
   );
+}
+
+/**
+ * The note screen's banner goes with it, so a note left while its save was failing (the
+ * unmount retry failed too) is reported once here instead of vanishing without a word.
+ */
+function useAlertUnsavedOnLeave(route: Route) {
+  const { takeUnsaved } = useLibrary();
+  const onNote = route.name === 'note';
+  useEffect(() => {
+    if (!onNote && takeUnsaved()) alert(storageFailure('save the note'));
+  }, [onNote, takeUnsaved]);
 }
 
 /**

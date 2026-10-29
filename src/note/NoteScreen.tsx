@@ -24,7 +24,7 @@ export function exportName(title: string | undefined): string {
 }
 
 export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
-  const { doc } = useStore();
+  const { doc, saveError } = useStore();
   const { metas, library, attempt, deleteWithUndo } = useLibrary();
   const meta = metas.find((m) => m.id === id);
   const pinned = !!meta?.pinned;
@@ -99,6 +99,11 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
             </div>
           )}
         </div>
+        {saveError && (
+          <p className="note-save-error" role="alert">
+            Not saved: storage is full or unavailable.
+          </p>
+        )}
       </header>
       <div className="note-page">
         <TitleField autoFocus={isNew} />

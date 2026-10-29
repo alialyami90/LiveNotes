@@ -236,6 +236,56 @@ describe('Root', () => {
   });
 });
 
+describe('Leaving a note whose save failed', () => {
+  it('alerts once on Home, after the unmount retry also fails', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    history.replaceState(null, '', '#/note/A');
+    const { user } = setup(storage);
+    await screen.findByText('alpha');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const setItem = storage.setItem.bind(storage);
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (k === noteKey('A')) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    await user.click(screen.getByText('alpha'));
+    await user.keyboard('{End}!');
+    await goHome();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith('Could not save the note: storage is full or unavailable.');
+    act(() => navigate('#/archive'));
+    await waitFor(() => expect(document.querySelector('main[data-screen="archive"]')).not.toBeNull());
+    await goHome();
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet when the retry on leaving succeeds', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    history.replaceState(null, '', '#/note/A');
+    const { user } = setup(storage);
+    await screen.findByText('alpha');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const setItem = storage.setItem.bind(storage);
+    let full = true;
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (full && k === noteKey('A')) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    await user.click(screen.getByText('alpha'));
+    await user.keyboard('{End}!');
+    await screen.findByRole('alert');
+    full = false;
+    await goHome();
+    expect(alert).not.toHaveBeenCalled();
+    expect(storage.getItem(noteKey('A'))).toContain('alpha!');
+    expect(titles()).toContain('Trip');
+  });
+});
+
 describe('Delete from the note screen', () => {
   // The app stamps its first entry at load; the shared beforeEach wiped that stamp.
   beforeEach(() => history.replaceState({ livenotesDepth: 0 }, '', '#/'));
@@ -280,6 +330,33 @@ describe('Delete from the note screen', () => {
     expect(location.hash).toBe('#/archive');
     expect(history.length).toBe(atNote);
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+  });
+
+  it('a confirmed permanent delete (storage full) is not undone by the leaving flush', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    const { user } = setup(storage);
+    await user.click(screen.getByRole('link', { name: /Trip/ }));
+    await screen.findByText('alpha');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const setItem = storage.setItem.bind(storage);
+    // Full: the index may only shrink. The note key itself still has room.
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (k === INDEX_KEY && String(v).length > (storage.getItem(k)?.length ?? 0)) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    await user.click(screen.getByText('alpha'));
+    await user.keyboard('{End}!');
+    await deleteOpenNote(user);
+    await waitFor(() => expect(home()).not.toBeNull());
+    await act(() => new Promise((r) => setTimeout(r, 400)));
+    expect(storage.getItem(noteKey('A'))).toBeNull();
+    expect(storage.getItem(INDEX_KEY)).not.toContain('"A"');
+    expect(titles()).not.toContain('Trip');
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(alert).not.toHaveBeenCalled();
   });
 
   it('going Forward onto the deleted note redirects in place', async () => {

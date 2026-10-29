@@ -30,7 +30,8 @@ export interface Library {
   setArchived(id: string, on: boolean): void;
   softDelete(id: string): void;
   undoDelete(id: string): void;
-  purgeDeleted(): void;
+  /** Makes one soft delete final. Other soft-deleted notes may be another tab's, still in its undo window. */
+  purge(id: string): void;
   remove(id: string): void;
   importDoc(json: string): NoteMeta | null;
   reload(): void;
@@ -241,7 +242,12 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
         const { deletedAt: _gone, ...rest } = m;
         return rest;
       }),
-    purgeDeleted: () => drop(metas.filter((m) => m.deletedAt !== undefined).map((m) => m.id)),
+    purge(id) {
+      sync();
+      // Restored meanwhile (another tab's Undo): nothing to make final.
+      if (metas.find((m) => m.id === id)?.deletedAt === undefined) return;
+      drop([id]);
+    },
     remove: (id) => drop([id]),
     importDoc(json) {
       const doc = parseImport(json);

@@ -347,6 +347,31 @@ describe('deleting', () => {
   });
 });
 
+describe('save failures', () => {
+  it('shows a non-blocking alert while saves fail, and clears it on the next successful save', async () => {
+    const { user, storage, open } = setup();
+    const id = open(doc('alpha', 'Trip'));
+    await screen.findByText('alpha');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const setItem = storage.setItem.bind(storage);
+    let full = true;
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (full && k === noteKey(id)) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    await user.click(screen.getByText('alpha'));
+    await user.keyboard('{End}!');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not saved: storage is full or unavailable.');
+    // Still editable: the banner never takes focus from the row being typed in.
+    expect(document.activeElement?.tagName).toBe('TEXTAREA');
+    full = false;
+    await user.keyboard('?');
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(storage.getItem(noteKey(id))).toContain('alpha!?');
+  });
+});
+
 describe('phone toolbar', () => {
   afterEach(() => {
     // @ts-expect-error jsdom has no matchMedia, so restoring means removing it

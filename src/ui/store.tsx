@@ -22,6 +22,8 @@ interface Store {
   focus: Focus | null;
   contexts: Map<string, NodeContext>;
   placeStatus: Record<string, PlaceStatus>;
+  /** The last save to storage failed (quota, blocked); the edits are only in memory until one succeeds. */
+  saveError: boolean;
   services: Services;
   today: ISODate;
   /** Applies a pure op; `focus` overrides the op's own focus (e.g. keep caret after indent). */
@@ -68,6 +70,8 @@ interface Props {
   storageKey?: string;
   /** Called after each successful save, e.g. to refresh the library's summary of this note. */
   onSaved?: (doc: Doc, previousRaw: string | null) => void;
+  /** Called when saving starts failing and when it recovers, including on unmount. */
+  onSaveResult?: (ok: boolean) => void;
   today?: ISODate;
   /** Backoff for places whose lookup failed because a service was unreachable; the last delay repeats. */
   retryDelaysMs?: number[];
@@ -82,6 +86,7 @@ export function DocProvider({
   storage = safeStorage(),
   storageKey = STORAGE_KEY,
   onSaved,
+  onSaveResult,
   today = localToday(),
   retryDelaysMs = RETRY_DELAYS_MS,
 }: Props) {
@@ -134,7 +139,7 @@ export function DocProvider({
 
   const replaceDoc = useCallback((doc: Doc) => load(doc, false), [load]);
 
-  usePersistence(storage, storageKey, state.doc, (doc) => load(doc, true), onSaved);
+  const saveError = usePersistence(storage, storageKey, state.doc, (doc) => load(doc, true), onSaved, onSaveResult);
 
   const value: Store = {
     doc: state.doc,
@@ -142,6 +147,7 @@ export function DocProvider({
     focus: state.focus,
     contexts,
     placeStatus,
+    saveError,
     services,
     today,
     apply,

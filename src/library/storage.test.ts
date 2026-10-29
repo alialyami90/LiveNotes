@@ -229,12 +229,25 @@ describe('mutations', () => {
     expect(lib.read(id)).toEqual(d);
   });
 
-  it('softDelete then purgeDeleted removes the note key and meta', () => {
+  it('purge leaves a note that was restored meanwhile', () => {
+    const { lib, store } = setup();
+    const { id } = lib.create(doc('Back'));
+    lib.softDelete(id);
+    setup(store).lib.undoDelete(id);
+    lib.purge(id);
+    expect(lib.read(id)).not.toBeNull();
+    expect(lib.list().some((m) => m.id === id)).toBe(true);
+  });
+
+  it('softDelete then purge removes the note key and meta, and only that one', () => {
     const { lib, store } = setup();
     const { id } = lib.create(doc('Bye'));
     const other = lib.create(doc('Stay')).id;
+    const alsoDeleted = lib.create(doc('Another tab')).id;
     lib.softDelete(id);
-    lib.purgeDeleted();
+    lib.softDelete(alsoDeleted);
+    lib.purge(id);
+    expect(lib.read(alsoDeleted)).not.toBeNull();
     expect(lib.list().some((m) => m.id === id)).toBe(false);
     expect(store.m.has(noteKey(id))).toBe(false);
     expect(lib.read(id)).toBeNull();

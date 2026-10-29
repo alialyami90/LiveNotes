@@ -16,6 +16,24 @@
   border-bottom: 1px solid var(--line, #e6e1d6);
 }
 
+/* Sits in the sticky bar so it stays in view while typing; wraps to its own full-width line. */
+.note-bar:has(.note-save-error) { flex-wrap: wrap; }
+.note-save-error {
+  flex-basis: 100%;
+  order: 1;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  padding: var(--sp-2, 8px) var(--sp-3, 12px);
+  border-radius: var(--radius, 10px);
+  background: var(--error-bg, #fdecea);
+  color: var(--error-ink, #b42318);
+  font-size: var(--fs-meta, 0.8125rem);
+  line-height: var(--lh-meta, 1.125rem);
+  font-weight: 600;
+}
+
 .note-bar-btn {
   display: inline-flex;
   align-items: center;

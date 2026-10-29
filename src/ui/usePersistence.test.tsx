@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { Doc } from '../model/types';
 import type { Services } from '../services/types';
 import { memoryStorage } from '../library/memoryStorage';
-import { DocProvider } from './store';
+import { DocProvider, useStore } from './store';
 import { Outline } from './Outline';
 
 const services: Services = {
@@ -65,5 +65,69 @@ describe('per-note persistence', () => {
     });
     expect(await screen.findByText('theirs')).toBeInTheDocument();
     expect(screen.queryByText('nope')).toBeNull();
+  });
+
+  it('a failed save stays dirty, so the unmount flush retries it', async () => {
+    const storage = memoryStorage();
+    const user = userEvent.setup();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { onSaved, unmount } = setup(storage);
+    const setItem = storage.setItem.bind(storage);
+    let full = true;
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (full) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    await user.click(screen.getByText('x'));
+    await user.keyboard('{End}yz');
+    await act(() => new Promise((r) => setTimeout(r, 350)));
+    expect(storage.getItem('livenotes:note:N')).not.toContain('xyz');
+    full = false;
+    unmount();
+    expect(storage.getItem('livenotes:note:N')).toContain('xyz');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports saveError while saves fail, and clears it on the next successful save', async () => {
+    const storage = memoryStorage();
+    const user = userEvent.setup();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const results: boolean[] = [];
+    function Probe() {
+      const { saveError } = useStore();
+      return <p data-testid="save-error">{String(saveError)}</p>;
+    }
+    storage.setItem('livenotes:note:N', JSON.stringify(doc('x')));
+    render(
+      <DocProvider
+        initialDoc={doc('x')}
+        storageKey="livenotes:note:N"
+        storage={storage}
+        services={services}
+        today="2026-10-28"
+        onSaveResult={(ok) => results.push(ok)}
+      >
+        <Outline />
+        <Probe />
+      </DocProvider>,
+    );
+    const setItem = storage.setItem.bind(storage);
+    let full = true;
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (full) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    expect(screen.getByTestId('save-error')).toHaveTextContent('false');
+    await user.click(screen.getByText('x'));
+    await user.keyboard('{End}y');
+    await act(() => new Promise((r) => setTimeout(r, 350)));
+    expect(screen.getByTestId('save-error')).toHaveTextContent('true');
+    expect(results).toEqual([false]);
+    full = false;
+    await user.keyboard('z');
+    await act(() => new Promise((r) => setTimeout(r, 350)));
+    expect(screen.getByTestId('save-error')).toHaveTextContent('false');
+    expect(results).toEqual([false, true]);
+    expect(storage.getItem('livenotes:note:N')).toContain('xyz');
   });
 });
