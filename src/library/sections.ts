@@ -1,4 +1,4 @@
-import type { ISODate } from '../context/resolve';
+import { dayNumber, type ISODate } from '../context/resolve';
 import { foldText } from './text';
 import type { NoteMeta } from './types';
 
@@ -15,15 +15,13 @@ export interface HomeSections {
 
 const BUCKETS: Bucket[] = ['today', 'thisWeek', 'nextWeek', 'later'];
 
-const dayNumber = (iso: ISODate) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return Date.UTC(y, m - 1, d) / 86400000;
-};
 // Day 0 (1970-01-01) was a Thursday, so +3 puts Monday at 0 and Sunday at 6.
 const sundayOnOrAfter = (n: number) => n + (6 - ((n + 3) % 7));
 
 const live = (m: NoteMeta) => !m.deletedAt;
 const byUpdated = (a: NoteMeta, b: NoteMeta) => b.updatedAt - a.updatedAt;
+const byStart = (a: NoteMeta, b: NoteMeta) =>
+  a.summary.from!.localeCompare(b.summary.from!) || byUpdated(a, b);
 
 /** A note is upcoming while its last date is still ahead; `null` means it belongs in recent. */
 function bucketFor(m: NoteMeta, today: ISODate): Bucket | null {
@@ -45,12 +43,15 @@ export function homeSections(metas: NoteMeta[], today: ISODate, query = ''): Hom
 
   const words = foldText(query).split(' ').filter(Boolean);
   if (words.length > 0) {
-    const results = active
-      .filter((m) => {
-        const hay = foldText([m.summary.searchText, m.summary.title, ...m.summary.placeNames].join(' '));
-        return words.every((w) => hay.includes(w));
-      })
-      .sort(byUpdated);
+    const matches = active.filter((m) => {
+      const hay = foldText([m.summary.searchText, m.summary.title, ...m.summary.placeNames].join(' '));
+      return words.every((w) => hay.includes(w));
+    });
+    // Search flattens every section, so keep home's reading order: what is coming up
+    // first (soonest first, pinned or not), then everything else by recency.
+    const ahead = matches.filter((m) => bucketFor(m, today)).sort(byStart);
+    const rest = matches.filter((m) => !bucketFor(m, today)).sort(byUpdated);
+    const results = [...ahead, ...rest];
     return { pinned: [], upcoming: [], recent: [], archivedCount, results };
   }
 
@@ -67,7 +68,7 @@ export function homeSections(metas: NoteMeta[], today: ISODate, query = ''): Hom
 
   const upcoming = BUCKETS.filter((b) => grouped.has(b)).map((bucket) => ({
     bucket,
-    notes: grouped.get(bucket)!.sort((a, b) => a.summary.from!.localeCompare(b.summary.from!) || byUpdated(a, b)),
+    notes: grouped.get(bucket)!.sort(byStart),
   }));
   return { pinned, upcoming, recent: recent.sort(byUpdated), archivedCount };
 }

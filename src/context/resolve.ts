@@ -20,7 +20,8 @@ export interface NodeContext {
 const pad = (n: number) => String(n).padStart(2, '0');
 const ROLLOVER_DAYS = 183;
 
-const dayNumber = (iso: ISODate) => {
+/** Days since 1970-01-01 (UTC), so date arithmetic never touches time zones. */
+export const dayNumber = (iso: ISODate) => {
   const [y, m, d] = iso.split('-').map(Number);
   return Date.UTC(y, m - 1, d) / 86400000;
 };

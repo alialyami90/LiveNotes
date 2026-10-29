@@ -46,6 +46,14 @@ describe('homeSections buckets', () => {
   it('treats the next Monday as nextWeek when today is Sunday', () => {
     expect(bucketOf(meta('a', { from: '2026-11-02', to: '2026-11-02' }), SUN)).toEqual(['nextWeek']);
   });
+  it('puts the far edge of next week in nextWeek and the day after in later (Wednesday)', () => {
+    expect(bucketOf(meta('a', { from: '2026-11-08', to: '2026-11-08' }))).toEqual(['nextWeek']);
+    expect(bucketOf(meta('a', { from: '2026-11-09', to: '2026-11-09' }))).toEqual(['later']);
+  });
+  it('puts the far edge of next week in nextWeek and the day after in later (Sunday)', () => {
+    expect(bucketOf(meta('a', { from: '2026-11-08', to: '2026-11-08' }), SUN)).toEqual(['nextWeek']);
+    expect(bucketOf(meta('a', { from: '2026-11-09', to: '2026-11-09' }), SUN)).toEqual(['later']);
+  });
   it('orders buckets today, thisWeek, nextWeek, later and omits empty ones', () => {
     const s = homeSections(
       [
@@ -145,6 +153,18 @@ describe('homeSections lists', () => {
     expect(s.recent).toEqual([]);
   });
 
+  it('orders results upcoming first (soonest first), then the rest by recency', () => {
+    const notes = [
+      meta('recent', { title: 'trip recent', updatedAt: 100, from: '2026-10-01', to: '2026-10-02' }),
+      meta('undated', { title: 'trip undated', updatedAt: 90 }),
+      meta('future', { title: 'trip future', updatedAt: 1, from: '2026-12-01', to: '2026-12-02' }),
+      meta('ongoing', { title: 'trip ongoing', updatedAt: 2, from: '2026-10-27', to: '2026-10-30' }),
+      meta('pinnedSoon', { title: 'trip pinnedSoon', updatedAt: 3, pinned: true, from: '2026-11-03', to: '2026-11-03' }),
+    ];
+    expect(homeSections(notes, WED, 'trip').results?.map((n) => n.id)).toEqual([
+      'ongoing', 'pinnedSoon', 'future', 'recent', 'undated',
+    ]);
+  });
   it('matches accent-insensitively against searchText and requires every word', () => {
     const notes = [meta('e', { searchText: 'weekend in evora' }), meta('p', { searchText: 'weekend porto' })];
     expect(homeSections(notes, WED, 'Évora').results?.map((n) => n.id)).toEqual(['e']);

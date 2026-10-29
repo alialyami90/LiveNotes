@@ -1,5 +1,5 @@
 import type { Place } from '../model/types';
-import type { ISODate } from '../context/resolve';
+import { dayNumber, type ISODate } from '../context/resolve';
 import type { Services } from '../services/types';
 import { haversine } from '../services/geo';
 import type { Expr } from './parser';
@@ -18,10 +18,6 @@ const DAY = 86400;
 const FORECAST_DAYS = 16;
 const UNIT_SCALE = { h: 3600, min: 60, d: DAY, km: 1000, m: 1 } as const;
 
-const dayNumber = (iso: ISODate) => {
-  const [y, m, d] = iso.split('-').map(Number);
-  return Date.UTC(y, m - 1, d) / (DAY * 1000);
-};
 const fromDayNumber = (n: number): ISODate => new Date(n * DAY * 1000).toISOString().slice(0, 10);
 
 const num = (value: number): Value => ({ kind: 'number', value });

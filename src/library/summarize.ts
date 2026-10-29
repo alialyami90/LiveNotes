@@ -46,7 +46,8 @@ export function summarizeNote(doc: Doc, today: ISODate): NoteSummary {
     to: sorted.at(-1),
     places,
     placeNames,
-    preview: body.map((l) => l.text).join(' ').slice(0, PREVIEW_CHARS).trim(),
+    // Code points, not UTF-16 units: slice() could cut an emoji in half.
+    preview: Array.from(body.map((l) => l.text).join(' ')).slice(0, PREVIEW_CHARS).join('').trim(),
     searchText: foldText([title, ...lines.map((l) => l.text), ...placeNames].join(' ')),
   };
 }

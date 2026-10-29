@@ -106,6 +106,28 @@ describe('summarizeNote', () => {
     expect(summarizeNote(doc, TODAY).preview).toBe('First Second');
   });
 
+  it('cuts the preview by code points, never inside an emoji', () => {
+    const doc = build([['a', 'Title', [['b', 'x'.repeat(139) + '😀' + 'tail']]]]);
+    const { preview } = summarizeNote(doc, TODAY);
+    expect(Array.from(preview)).toHaveLength(140);
+    expect(preview.endsWith('😀')).toBe(true);
+    expect(preview).not.toMatch(/[\ud800-\udbff]$/);
+  });
+
+  it('treats a whitespace-only doc.title like no title', () => {
+    const doc = build([['a', 'Fallback', [['b', 'body']]]], { title: '   ' });
+    const s = summarizeNote(doc, TODAY);
+    expect(s.title).toBe('Fallback');
+    expect(s.preview).toBe('body');
+  });
+
+  it('handles an empty first bullet', () => {
+    const doc = build([['a', ''], ['b', 'Second']]);
+    const s = summarizeNote(doc, TODAY);
+    expect(s.title).toBe('');
+    expect(s.preview).toBe('Second');
+  });
+
   it('searchText is folded title + text + places', () => {
     const doc = build([['a', 'Weekend', [['b', 'Visit @Évora']]]], { title: 'São Trip' });
     const { searchText } = summarizeNote(doc, TODAY);
