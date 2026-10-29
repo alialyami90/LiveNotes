@@ -2,6 +2,7 @@ import type { Place } from '../model/types';
 import type { Weather } from '../formula/values';
 import type { Services } from './types';
 import { haversine } from './geo';
+import { isStreetTag, kindOfOpenMeteo, kindOfPhoton, photonExtent } from './kinds';
 
 /** The service couldn't be reached or is overloaded; worth retrying later. */
 export class TransientError extends Error {}
@@ -19,11 +20,11 @@ function describeWeather(code: number): Pick<Weather, 'condition' | 'icon'> {
 }
 
 interface OpenMeteoGeoResponse {
-  results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string; population?: number }[];
+  results?: { name: string; latitude: number; longitude: number; admin1?: string; country?: string; population?: number; feature_code?: string }[];
 }
 
 interface PhotonResponse {
-  features?: { geometry: { coordinates: [number, number] }; properties: Record<string, string | undefined> }[];
+  features?: { geometry: { coordinates: [number, number] }; properties: Record<string, unknown> }[];
 }
 
 interface MeteoResponse {
@@ -50,7 +51,14 @@ const MAJOR_CITY = 100_000;
 
 /** Candidates carry ranking hints that are dropped before a Place is stored. */
 type Candidate = Place & { population?: number; street?: boolean };
-const toPlace = ({ name, lat, lon, label }: Candidate): Place => (label ? { name, lat, lon, label } : { name, lat, lon });
+const toPlace = ({ name, lat, lon, label, kind, extent }: Candidate): Place => ({
+  name,
+  lat,
+  lon,
+  ...(label ? { label } : {}),
+  ...(kind ? { kind } : {}),
+  ...(extent ? { extent } : {}),
+});
 const SAME_PLACE_M = 2000;
 
 const label = (...parts: (string | undefined)[]) =>
@@ -138,6 +146,7 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
       lon: r.longitude,
       label: label(r.name, r.admin1, r.country),
       population: r.population,
+      kind: kindOfOpenMeteo(r.feature_code, r.population),
     }));
   }
 
@@ -148,9 +157,20 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
       const data = await getJson<PhotonResponse>(url, 'place lookup unavailable', photonGapMs);
       return (data.features ?? []).map((f) => {
         const [lon, lat] = f.geometry.coordinates;
-        const { name, city, county, state, country, osm_key } = f.properties;
-        const n = name ?? q;
-        return { name: n, lat, lon, label: label(n, city ?? county ?? state, country), street: osm_key === 'highway' };
+        const props = f.properties;
+        const str = (k: string) => (typeof props[k] === 'string' ? (props[k] as string) : undefined);
+        const n = str('name') ?? q;
+        const osmKey = str('osm_key');
+        const osmValue = str('osm_value');
+        return {
+          name: n,
+          lat,
+          lon,
+          label: label(n, str('city') ?? str('county') ?? str('state'), str('country')),
+          kind: kindOfPhoton(osmKey, osmValue),
+          extent: photonExtent(props.extent),
+          street: isStreetTag(osmKey, osmValue),
+        };
       });
     }, priority, signal);
   }

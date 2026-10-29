@@ -82,16 +82,18 @@ function fakeFetch(routes: Route[]) {
   return { fn, urls, maxInFlight: () => maxInFlight };
 }
 
-const om = (...results: [string, number, number, string, string, number?][]) => ({
+const om = (...results: [string, number, number, string, string, number?, string?][]) => ({
   body: {
-    results: results.map(([name, latitude, longitude, admin1, country, population]) => ({ name, latitude, longitude, admin1, country, population })),
+    results: results.map(([name, latitude, longitude, admin1, country, population, feature_code]) => ({
+      name, latitude, longitude, admin1, country, population, feature_code,
+    })),
   },
 });
-const photon = (...features: [string, number, number, string, string, string?][]) => ({
+const photon = (...features: [string, number, number, string, string, string?, string?, number[]?][]) => ({
   body: {
-    features: features.map(([name, lat, lon, city, country, osm_key = 'place']) => ({
+    features: features.map(([name, lat, lon, city, country, osm_key = 'place', osm_value, extent]) => ({
       geometry: { coordinates: [lon, lat] },
-      properties: { name, city, country, osm_key },
+      properties: { name, city, country, osm_key, osm_value, extent },
     })),
   },
 });
@@ -99,9 +101,9 @@ const noSleep = { sleep: async () => {}, photonGapMs: 0 };
 
 describe('httpServices geocoding', () => {
   it('prefers Open-Meteo, which ranks towns by population (Lisbon, Portugal, not Lisbon, Iowa)', async () => {
-    const f = fakeFetch([{ match: OM, respond: () => om(['Lisbon', 38.72, -9.14, 'Lisbon', 'Portugal']) }]);
+    const f = fakeFetch([{ match: OM, respond: () => om(['Lisbon', 38.72, -9.14, 'Lisbon', 'Portugal', 545923, 'PPLC']) }]);
     const p = await httpServices(f.fn, noSleep).geocode('lisbon');
-    expect(p).toEqual({ name: 'Lisbon', lat: 38.72, lon: -9.14, label: 'Lisbon, Portugal' });
+    expect(p).toEqual({ name: 'Lisbon', lat: 38.72, lon: -9.14, label: 'Lisbon, Portugal', kind: 'city' });
     expect(f.urls).toHaveLength(1);
     expect(f.urls[0]).toContain('name=lisbon&count=1&language=en');
   });
@@ -202,16 +204,66 @@ describe('review fixes: geocode edge cases', () => {
   });
 });
 
+describe('place kinds and extents', () => {
+  it('a Photon cafe keeps its kind and its extent, reordered to [west, south, east, north]', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => ({ body: {} }) },
+      { match: PHOTON, respond: () => photon(['Café A Brasileira', 38.71, -9.14, 'Lisboa', 'Portugal', 'amenity', 'cafe', [-9.141, 38.711, -9.139, 38.709]]) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('a brasileira');
+    expect(p).toEqual({
+      name: 'Café A Brasileira', lat: 38.71, lon: -9.14, label: 'Café A Brasileira, Lisboa, Portugal',
+      kind: 'cafe', extent: [-9.141, 38.709, -9.139, 38.711],
+    });
+  });
+
+  it('a Photon result without a valid extent has no extent field, but still a kind', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => ({ body: {} }) },
+      { match: PHOTON, respond: () => photon(['Somewhere', 1, 2, 'Y', 'Z', 'tourism', 'zoo', [1, 2]]) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('somewhere');
+    expect(p).toEqual({ name: 'Somewhere', lat: 1, lon: 2, label: 'Somewhere, Y, Z', kind: 'street' });
+    expect(p).not.toHaveProperty('extent');
+  });
+
+  it('an Open-Meteo capital is a city, and ranking hints never reach the stored place', async () => {
+    const f = fakeFetch([{ match: OM, respond: () => om(['Lisbon', 38.72, -9.14, 'Lisbon', 'Portugal', 545923, 'PPLC']) }]);
+    const p = await httpServices(f.fn, noSleep).geocode('lisbon');
+    expect(p?.kind).toBe('city');
+    expect(p).not.toHaveProperty('population');
+    expect(p).not.toHaveProperty('street');
+  });
+
+  it('search results carry kinds too', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Porto', 41.15, -8.61, 'Porto', 'Portugal', 231962, 'PPLA']) },
+      { match: PHOTON, respond: () => photon(['Livraria Lello', 41.146, -8.615, 'Porto', 'Portugal', 'shop', 'books']) },
+    ]);
+    const results = await httpServices(f.fn, noSleep).search('l');
+    expect(results.map((r) => r.kind)).toEqual(['city', 'shop']);
+  });
+
+  it('a landmark such as a hospital beats a far-away namesake town (a street still does not)', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Santa Maria', 38.8, -9.38, 'Lisbon District', 'Portugal', 12000, 'PPL']) },
+      { match: PHOTON, respond: () => photon(['Santa Maria', 41.15, -8.6, 'Porto', 'Portugal', 'amenity', 'hospital']) },
+    ]);
+    const p = await httpServices(f.fn, noSleep).geocode('santa maria', { name: 'Porto', lat: 41.15, lon: -8.61 });
+    expect(p).toMatchObject({ lat: 41.15, lon: -8.6, kind: 'street' });
+  });
+});
+
 describe('far cities under a parent place (live finding: Dammam under Riyadh)', () => {
   const RIYADH = { name: 'Riyadh', lat: 24.69, lon: 46.72 };
 
   it('a major city beats a same-name local match near the parent', async () => {
     const f = fakeFetch([
-      { match: OM, respond: () => om(['Dammam', 26.43442, 50.10326, 'Eastern Province', 'Saudi Arabia', 1252523]) },
+      { match: OM, respond: () => om(['Dammam', 26.43442, 50.10326, 'Eastern Province', 'Saudi Arabia', 1252523, 'PPLA']) },
       { match: PHOTON, respond: () => photon(['Dammam', 24.7764, 46.7305, 'Riyadh governorate', 'Saudi Arabia']) },
     ]);
     const p = await httpServices(f.fn, noSleep).geocode('dammam', RIYADH);
-    expect(p).toEqual({ name: 'Dammam', lat: 26.43442, lon: 50.10326, label: 'Dammam, Eastern Province, Saudi Arabia' });
+    expect(p).toEqual({ name: 'Dammam', lat: 26.43442, lon: 50.10326, label: 'Dammam, Eastern Province, Saudi Arabia', kind: 'city' });
   });
 
   it('a street never beats a town', async () => {
@@ -225,7 +277,7 @@ describe('far cities under a parent place (live finding: Dammam under Riyadh)', 
 
   it('the picker lists the major city before the local match', async () => {
     const f = fakeFetch([
-      { match: OM, respond: () => om(['Dammam', 26.43442, 50.10326, 'Eastern Province', 'Saudi Arabia', 1252523]) },
+      { match: OM, respond: () => om(['Dammam', 26.43442, 50.10326, 'Eastern Province', 'Saudi Arabia', 1252523, 'PPLA']) },
       { match: PHOTON, respond: () => photon(['Dammam', 24.7764, 46.7305, 'Riyadh governorate', 'Saudi Arabia']) },
     ]);
     const results = await httpServices(f.fn, noSleep).search('dammam', RIYADH);

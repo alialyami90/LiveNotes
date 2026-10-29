@@ -11,11 +11,22 @@ export interface OutlineNode {
   view?: ViewKind;
 }
 
+/** What a place is, for its icon. Mapped from map data in services/kinds.ts. */
+export type PlaceKind =
+  | 'region' | 'city' | 'village' | 'neighbourhood'
+  | 'restaurant' | 'cafe' | 'bar' | 'shop' | 'stay'
+  | 'sight' | 'park' | 'beach' | 'nature'
+  | 'airport' | 'station' | 'street';
+
 export interface Place {
   name: string;
   lat: number;
   lon: number;
   label?: string;
+  /** Absent on places saved before kinds existed; those show the plain pin. */
+  kind?: PlaceKind;
+  /** [west, south, east, north], when the map data has one. */
+  extent?: [number, number, number, number];
 }
 
 export interface Doc {
