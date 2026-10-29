@@ -107,7 +107,8 @@ review fixes, and a bolder version of the existing visual world.
   ```
 
   `results` is set only when `query` is non-empty. Then `pinned`, `upcoming`
-  and `recent` are empty.
+  and `recent` are empty. `results` is ordered upcoming then recent (spec §4):
+  upcoming matches by `from`, then the rest by `updatedAt` descending.
 - Produces `archivedNotes(metas: NoteMeta[]): NoteMeta[]`, sorted by
   `updatedAt` descending.
 - Produces `relativeDays(from: ISODate, to: ISODate, today: ISODate): string`.
@@ -309,6 +310,10 @@ review fixes, and a bolder version of the existing visual world.
 
   The whole card is a link to `#/note/<id>`. The menu stops propagation.
 - `CardMenu` items: `Pin`/`Unpin`, `Archive`/`Unarchive`, `Delete`.
+- `LibraryProvider` gains the undo state (Ruling C): `pendingDelete: string | null`,
+  `deleteWithUndo(id)`, `undoDelete()` and `expireDelete()`. Home renders
+  `UndoBar` whenever `pendingDelete` is set, so a delete from the note screen
+  shows it too.
 - `UndoBar({ onUndo, onExpire })` shows `Note deleted` and an `Undo` button.
   It auto-expires after 6000 ms, then calls `library.purgeDeleted()`.
 - `Home` layout, top to bottom:
@@ -358,9 +363,9 @@ review fixes, and a bolder version of the existing visual world.
 - `NoteScreen({ id, isNew })` renders:
   - a top bar with `← ` (`aria-label="Back"`, calls `goBack()`)
   - a `⋯` menu (`aria-label="Note menu"`) with `Pin`/`Unpin`,
-    `Archive`/`Unarchive`, `Export`, and `Delete`. Delete soft-deletes,
-    navigates home, and Home shows the undo bar via a
-    `?deleted=<id>` hash query or library state.
+    `Archive`/`Unarchive`, `Export`, and `Delete`. Delete calls the
+    library's `deleteWithUndo(id)` (Task 4) and navigates home, where the
+    undo bar shows from library state.
   - `TitleField`
   - `Outline`
   - `MobileToolbar`
@@ -463,7 +468,7 @@ review fixes, and a bolder version of the existing visual world.
 
 **Files:**
 - Modify: the scratchpad `e2e.cjs` (not committed), `CLAUDE.md` (sections 2.1,
-  3.1, 7 and new §12 Library), `src/model/sample.ts` (title)
+  3.1, 7 and new §12 Library). The sample's title is set by Task 2, not here.
 
 - [ ] **Step 1:** Update the Playwright script.
   - Every existing check first opens the sample note from home.

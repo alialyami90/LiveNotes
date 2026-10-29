@@ -94,11 +94,15 @@ src/
   model/      types.ts  tree.ts (parent index, traversal)  ops.ts (pure edits)
               storage.ts (validate, load/save)  sample.ts (seed trip doc)
   syntax/     tokenize.ts (text → segments, escapes)  dates.ts (date recognition)
+              mention.ts (mention under the caret)  plain.ts (chips → plain text)
   context/    resolve.ts (effective place/date per node)
   formula/    lexer.ts  parser.ts  evaluate.ts  values.ts  format.ts
-  services/   types.ts  http.ts (Photon · Open-Meteo · OSRM)  geo.ts  memo.ts
+  library/    types.ts  summarize.ts  sections.ts  sketch.ts  text.ts (notes library, in progress)
+  services/   types.ts  http.ts (Open-Meteo · Photon · OSRM)  geo.ts  memo.ts
+  platform/   export.ts (download on web, share sheet on Android)
   ui/         store.tsx (DocProvider: state, focus, place lookups, persistence)
               App.tsx  ErrorBoundary.tsx  Outline.tsx  NodeRow.tsx  NodeEditor.tsx
+              PlacePicker.tsx  usePlaceSearch.ts  MobileToolbar.tsx
               RichText.tsx  Chips.tsx  NodeMenu.tsx  hover.ts  useFormula.ts
               views/ViewHost.tsx  views/collect.ts  views/MapView.tsx (lazy)
               views/CalendarView.tsx  views/TableView.tsx
@@ -309,8 +313,9 @@ Rules:
   is known, so the lookup can be biased to it.
 - **Place status** is `pending`, `missing` (the services answered "no results")
   or `error` (couldn't reach them). An `error` key is retried after 3 s, 10 s,
-  30 s and 60 s, and again when the device comes back `online`. Its chip shows
-  a dashed outline with ⟳.
+  30 s, 60 s and 180 s, then every 180 s. It is also retried at once when the
+  device comes back `online`, when the app becomes visible again, and when
+  the chip is tapped. Its chip shows a dashed outline with ⟳.
 - Formulas wait for a mentioned key's (biased) lookup instead of starting their
   own.
 - **The focused row is frozen for everyone else.** While a row is being edited,

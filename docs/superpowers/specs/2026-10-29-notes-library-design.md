@@ -1,6 +1,6 @@
 # Notes library, home timeline and visual push: design
 
-Status: draft for review · Product truth: `PRODUCT.md` · Engineering spec: `CLAUDE.md`
+Status: approved (2026-10-29) · Product truth: `PRODUCT.md` · Engineering spec: `CLAUDE.md`
 
 ## 1. What the owner asked for (confirmed answers)
 
@@ -25,6 +25,7 @@ interface NoteMeta {
   updatedAt: number;
   pinned?: boolean;
   archived?: boolean;
+  deletedAt?: number;          // soft delete, see below
   summary: NoteSummary;        // recomputed on every save, so home never parses every note
 }
 
