@@ -369,3 +369,189 @@ describe('place picker', () => {
     expect(screen.getByRole('textbox')).toHaveFocus();
   });
 });
+
+describe('review fixes: lookups', () => {
+  const RIYADH = { name: 'Riyadh', lat: 24.69, lon: 46.72 };
+
+  it('retries a place used only inside a formula', async () => {
+    let calls = 0;
+    const svc: Services = {
+      ...services,
+      geocode: async () => {
+        calls++;
+        if (calls === 1) throw new TransientError('place lookup unavailable');
+        return RIYADH;
+      },
+    };
+    render(
+      <DocProvider initialDoc={build([['a', 'span {distance(@Riyadh, @Riyadh)}']])} services={svc} storage={null} today="2026-10-28" retryDelaysMs={[10]}>
+        <Outline />
+      </DocProvider>,
+    );
+    expect(await screen.findByText('0 m', {}, { timeout: 2000 })).toHaveClass('chip-formula');
+    expect(calls).toBe(2);
+  });
+
+  it('formula rows still get the parent-biased lookup', async () => {
+    const seen: [string, string | undefined][] = [];
+    const svc: Services = {
+      ...services,
+      geocode: async (n, near) => {
+        seen.push([n, near?.name]);
+        return n === 'lisbon' ? { name: 'Lisboa', lat: 38.72, lon: -9.14 } : { name: 'Time Out Market Lisboa', lat: 38.707, lon: -9.146 };
+      },
+    };
+    const doc = build([['p', 'Day in @Lisbon']]);
+    doc.nodes.p.children = ['c'];
+    doc.nodes.c = { id: 'c', text: 'Lunch at @[Time Out Market] {route(prev, here)}', children: [] };
+    render(
+      <DocProvider initialDoc={doc} services={svc} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Time Out Market')).toHaveAttribute('title', 'Time Out Market Lisboa'));
+    expect(seen).toEqual([['lisbon', undefined], ['time out market', 'Lisboa']]);
+  });
+
+  it('keeps retrying after the backoff list runs out (last delay repeats)', async () => {
+    let calls = 0;
+    const svc: Services = {
+      ...services,
+      geocode: async (n) => {
+        calls++;
+        if (calls <= 3) throw new TransientError('place lookup unavailable');
+        return services.geocode(n);
+      },
+    };
+    render(
+      <DocProvider initialDoc={build([['a', 'Visit @Lisbon']])} services={svc} storage={null} today="2026-10-28" retryDelaysMs={[5]}>
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveAttribute('title', 'Lisboa'), { timeout: 2000 });
+    expect(calls).toBe(4);
+  });
+
+  it('tapping a "couldn’t reach" chip retries now, without opening the editor', async () => {
+    let calls = 0;
+    const svc: Services = {
+      ...services,
+      geocode: async (n) => {
+        calls++;
+        if (calls === 1) throw new TransientError('place lookup unavailable');
+        return services.geocode(n);
+      },
+    };
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={build([['a', 'Visit @Lisbon']])} services={svc} storage={null} today="2026-10-28" retryDelaysMs={[1_000_000]}>
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveClass('is-error'));
+    await user.click(screen.getByText('Lisbon'));
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await waitFor(() => expect(screen.getByText('Lisbon')).toHaveAttribute('title', 'Lisboa'));
+  });
+
+  it('a formula waiting during an import still resolves afterwards', async () => {
+    let release: (p: { name: string; lat: number; lon: number }) => void = () => {};
+    const svc: Services = { ...services, geocode: () => new Promise((r) => { release = r; }) };
+    let replace: (d: Doc) => void = () => {};
+    function Grab() {
+      replace = useStore().replaceDoc;
+      return null;
+    }
+    const doc = build([['a', 'span {distance(@Riyadh, @Riyadh)}']]);
+    render(
+      <DocProvider initialDoc={doc} services={svc} storage={null} today="2026-10-28">
+        <Grab />
+        <Outline />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('…')).toBeInTheDocument());
+    act(() => replace(build([['a', 'span {distance(@Riyadh, @Riyadh)}']])));
+    await act(async () => release(RIYADH));
+    expect(await screen.findByText('0 m')).toBeInTheDocument();
+  });
+});
+
+describe('review fixes: picker', () => {
+  it('tapping a row that ends in a saved place does not open the picker; Enter makes a new bullet', async () => {
+    const doc = build([['a', 'fly into @Lisbon']]);
+    doc.places.lisbon = { name: 'Lisbon', lat: 38.72, lon: -9.14, label: 'Lisbon, Portugal' };
+    const { user, container } = setup(doc);
+    await user.click(screen.getByText('fly into', { exact: false }));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    await user.keyboard('{Enter}');
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(2);
+  });
+
+  it('the picker opens once you type inside the mention', async () => {
+    const doc = build([['a', 'fly into @Lis']]);
+    doc.places.lisbon = { name: 'Lisbon', lat: 38.72, lon: -9.14, label: 'Lisbon, Portugal' };
+    const { user } = setup(doc);
+    await user.click(screen.getByText('fly into', { exact: false }));
+    await user.keyboard('b');
+    expect(await screen.findByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('scrolls the picker into view when it opens (rows near the keyboard)', async () => {
+    const spy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = spy;
+    try {
+      const doc = build([['a', 'x']]);
+      doc.places.lisbon = { name: 'Lisbon', lat: 38.72, lon: -9.14 };
+      const { user } = setup(doc);
+      await user.click(screen.getByText('x'));
+      await user.keyboard('{End} @l');
+      await screen.findByRole('listbox');
+      expect(spy).toHaveBeenCalledWith({ block: 'nearest' });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});
+
+describe('review fixes: header menu', () => {
+  it('closes when tapping outside it', async () => {
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={build([['a', 'x']])} services={services} storage={null} today="2026-10-28">
+        <App />
+      </DocProvider>,
+    );
+    const toggle = screen.getByRole('button', { name: 'Menu' });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.click(screen.getByText('x'));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+describe('review fixes: responsive picker', () => {
+  it('shows town results while landmark results are still coming, and cancels stale searches', async () => {
+    const signals: AbortSignal[] = [];
+    const svc: Services = {
+      ...services,
+      search: (q, _near, opts) => {
+        if (opts?.signal) signals.push(opts.signal);
+        opts?.onTowns?.([{ name: `Town ${q}`, lat: 1, lon: 2, label: `Town ${q}, Somewhere` }]);
+        return new Promise(() => {}); // landmarks never arrive
+      },
+    };
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={build([['a', 'x']])} services={svc} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    await user.click(screen.getByText('x'));
+    await user.keyboard('{End} @po');
+    expect(await screen.findByText('Town po')).toBeInTheDocument();
+    await user.keyboard('r');
+    expect(await screen.findByText('Town por')).toBeInTheDocument();
+    expect(signals[0].aborted).toBe(true);
+  });
+});

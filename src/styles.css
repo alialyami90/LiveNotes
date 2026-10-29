@@ -440,10 +440,12 @@ body {
 .mobile-toolbar .toolbar-view[aria-pressed='true'] { filter: none; opacity: 1; background: var(--line); }
 .toolbar-sep { flex: none; width: 1px; margin: 6px 2px; background: var(--line); }
 .app:has(.mobile-toolbar) .page { margin-bottom: 96px; }
+.app:has(.picker) .page { margin-bottom: 380px; } /* room to scroll a picker on the last rows into view */
 
 /* ---------- place picker ---------- */
 
 .picker {
+  scroll-margin-bottom: 96px; /* clear the phone toolbar when scrolled into view */
   position: absolute;
   top: calc(100% + 4px);
   left: 0;

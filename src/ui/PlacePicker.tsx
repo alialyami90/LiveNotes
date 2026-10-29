@@ -1,4 +1,4 @@
-import type { SyntheticEvent } from 'react';
+import { useEffect, useRef, type SyntheticEvent } from 'react';
 import type { Suggestion } from './usePlaceSearch';
 
 interface Props {
@@ -12,15 +12,21 @@ interface Props {
 const keepEditorFocus = (e: SyntheticEvent) => e.preventDefault();
 
 export function PlacePicker({ items, active, loading, onPick, onHover }: Props) {
+  const ref = useRef<HTMLDivElement & HTMLUListElement>(null);
+  // On a phone the row being typed in often sits just above the keyboard and toolbar.
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [items.length > 0]);
+
   if (items.length === 0) {
     return loading ? (
-      <div className="picker picker-status" aria-live="polite">
+      <div ref={ref} className="picker picker-status" aria-live="polite">
         Searching places…
       </div>
     ) : null;
   }
   return (
-    <ul className="picker" role="listbox" aria-label="Places">
+    <ul ref={ref} className="picker" role="listbox" aria-label="Places">
       {items.map((s, i) => (
         <li
           key={`${s.place.lat},${s.place.lon},${i}`}

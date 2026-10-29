@@ -56,7 +56,7 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
   const photonGapMs = opts.photonGapMs ?? 1100;
 
   /** Retries overload and network failures; a 4xx is the caller's problem and isn't retried. */
-  async function getJson<T>(url: string, failure: string): Promise<T> {
+  async function getJson<T>(url: string, failure: string, minRetryDelayMs = 0): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -73,25 +73,54 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
         clearTimeout(timer);
       }
       if (attempt >= RETRY_DELAYS_MS.length) throw new TransientError(failure);
-      await sleep(RETRY_DELAYS_MS[attempt]);
+      await sleep(Math.max(RETRY_DELAYS_MS[attempt], minRetryDelayMs));
     }
   }
 
-  let photonQueue: Promise<unknown> = Promise.resolve();
+  // One Photon request at a time, spaced out, so a page full of mentions isn't a burst.
+  // Searches the user is typing go ahead of background lookups; a cancelled search is skipped.
+  interface QueuedTask {
+    run(): Promise<void>;
+    skip(): void;
+    signal?: AbortSignal;
+  }
+  const queues: Record<'interactive' | 'background', QueuedTask[]> = { interactive: [], background: [] };
+  let pumping = false;
   let photonLast = 0;
-  /** One Photon request at a time, spaced out, so a page full of mentions isn't a burst. */
-  function viaPhotonQueue<T>(task: () => Promise<T>): Promise<T> {
-    const run = photonQueue.then(async () => {
-      const wait = photonLast + photonGapMs - Date.now();
-      if (wait > 0) await sleep(wait);
-      try {
-        return await task();
-      } finally {
+
+  const nextTask = () => queues.interactive.shift() ?? queues.background.shift();
+
+  async function pump() {
+    if (pumping) return;
+    pumping = true;
+    try {
+      while (queues.interactive.length || queues.background.length) {
+        // Wait out the spacing *before* choosing, so a search typed meanwhile can go first.
+        const wait = photonLast + photonGapMs - Date.now();
+        if (wait > 0) await sleep(wait);
+        const task = nextTask();
+        if (!task) break;
+        if (task.signal?.aborted) {
+          task.skip();
+          continue;
+        }
+        await task.run();
         photonLast = Date.now();
       }
+    } finally {
+      pumping = false;
+    }
+  }
+
+  function viaPhotonQueue<T>(task: () => Promise<T>, priority: 'interactive' | 'background', signal?: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      queues[priority].push({
+        signal,
+        skip: () => reject(new DOMException('search cancelled', 'AbortError')),
+        run: () => task().then(resolve, reject),
+      });
+      void pump();
     });
-    photonQueue = run.catch(() => undefined);
-    return run;
   }
 
   async function openMeteo(q: string, count: number): Promise<Place[]> {
@@ -105,28 +134,32 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
     }));
   }
 
-  function photon(q: string, limit: number, near?: Place): Promise<Place[]> {
+  function photon(q: string, limit: number, near: Place | undefined, priority: 'interactive' | 'background', signal?: AbortSignal): Promise<Place[]> {
     const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
     const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=${limit}&lang=en${bias}`;
     return viaPhotonQueue(async () => {
-      const data = await getJson<PhotonResponse>(url, 'place lookup unavailable');
+      const data = await getJson<PhotonResponse>(url, 'place lookup unavailable', photonGapMs);
       return (data.features ?? []).map((f) => {
         const [lon, lat] = f.geometry.coordinates;
         const { name, city, county, state, country } = f.properties;
         const n = name ?? q;
         return { name: n, lat, lon, label: label(n, city ?? county ?? state, country) };
       });
-    });
+    }, priority, signal);
   }
 
-  const settle = <T>(p: Promise<T>) =>
+  /** A source's answer, or how it failed; a cancelled search still rejects. */
+  const settle = <T>(p: Promise<T[]>) =>
     p.then(
-      (value) => ({ value, failed: false as const }),
+      (value) => ({ value, failed: false, transient: false }),
       (error: unknown) => {
-        if (!(error instanceof TransientError)) throw error;
-        return { value: [] as never as T, failed: true as const };
+        if (error instanceof DOMException && error.name === 'AbortError') throw error;
+        return { value: [] as T[], failed: true, transient: error instanceof TransientError };
       },
     );
+
+  const failure = (...results: { failed: boolean; transient: boolean }[]) =>
+    results.some((r) => r.transient) ? new TransientError('place lookup unavailable') : new Error('place lookup failed');
 
   const isNear = (p: Place, near?: Place) => !near || haversine(p, near) <= NEAR_KM * 1000;
 
@@ -135,16 +168,19 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
       const om = await settle(openMeteo(name, 1));
       const town = om.value[0];
       if (town && isNear(town, near)) return town;
-      const ph = await settle(photon(name, 1, near));
-      const found = ph.value[0] ?? town;
-      if (found) return found;
-      if (om.failed || ph.failed) throw new TransientError('place lookup unavailable');
+      const ph = await settle(photon(name, 1, near, 'background'));
+      if (ph.value[0]) return ph.value[0];
+      // A far-away namesake is only acceptable once Photon has really answered.
+      if (town && !ph.transient) return town;
+      if (om.failed || ph.failed) throw failure(om, ph);
       return null;
     },
 
-    async search(query, near) {
-      const [om, ph] = await Promise.all([settle(openMeteo(query, 5)), settle(photon(query, 5, near))]);
-      if (om.failed && ph.failed) throw new TransientError('place lookup unavailable');
+    async search(query, near, opts = {}) {
+      const towns = settle(openMeteo(query, 5));
+      void towns.then((r) => r.value.length && opts.onTowns?.(r.value), () => undefined);
+      const [om, ph] = await Promise.all([towns, settle(photon(query, 5, near, 'interactive', opts.signal))]);
+      if (om.failed && ph.failed) throw failure(om, ph);
       // Near a known place, biased landmarks lead; otherwise population-ranked towns do.
       const ordered = near
         ? [...ph.value.filter((p) => isNear(p, near)), ...om.value, ...ph.value.filter((p) => !isNear(p, near))]

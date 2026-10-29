@@ -1,10 +1,11 @@
+import type { MouseEvent } from 'react';
 import type { NodeId } from '../model/types';
 import { formatValue } from '../formula/format';
 import { useStore } from './store';
 import { useFormula } from './useFormula';
 
 export function PlaceChip({ placeKey, name }: { placeKey: string; name: string }) {
-  const { doc, placeStatus } = useStore();
+  const { doc, placeStatus, retryPlace } = useStore();
   const place = doc.places[placeKey];
   const s = placeStatus[placeKey];
   const status = place ? 'is-resolved' : s === 'missing' ? 'is-missing' : s === 'error' ? 'is-error' : 'is-pending';
@@ -13,10 +14,15 @@ export function PlaceChip({ placeKey, name }: { placeKey: string; name: string }
     : status === 'is-missing'
       ? 'Place not found — edit the mention and pick a suggestion'
       : status === 'is-error'
-        ? 'Couldn’t reach the place service — retrying'
+        ? 'Couldn’t reach the place service — retrying; tap to retry now'
         : 'Looking up…';
+  const onClick = (e: MouseEvent) => {
+    if (status !== 'is-error') return;
+    e.stopPropagation(); // retry instead of opening the editor
+    retryPlace(placeKey);
+  };
   return (
-    <span className={`chip chip-place ${status}`} title={title}>
+    <span className={`chip chip-place ${status}`} title={title} onClick={onClick}>
       {name}
     </span>
   );

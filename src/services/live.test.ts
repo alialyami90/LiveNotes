@@ -75,6 +75,17 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices',
     expect(dammam?.label).toContain('Saudi Arabia');
   }, 60_000);
 
+  it('a far city under a parent city is not swapped for a local street', async () => {
+    const riyadh = await s.geocode('riyadh');
+    const dammam = await s.geocode('dammam', riyadh!);
+    console.log('[app] dammam near riyadh', JSON.stringify(dammam));
+    expect(dammam?.label).toContain('Saudi Arabia');
+    expect(Math.abs(dammam!.lat - 26.43) < 0.3 && Math.abs(dammam!.lon - 50.1) < 0.3).toBe(true);
+    const porto = await s.geocode('porto', (await s.geocode('lisbon'))!);
+    console.log('[app] porto near lisbon', JSON.stringify(porto));
+    expect(Math.abs(porto!.lat - 41.15) < 0.2).toBe(true);
+  }, 60_000);
+
   it('search returns candidates for the picker', async () => {
     const results = await s.search('khobar');
     console.log('[app] search khobar', results.map((r) => r.label).join(' ; '));

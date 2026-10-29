@@ -5,7 +5,7 @@ import { loadDoc, parseImport, safeStorage, STORAGE_KEY } from '../model/storage
 import { resolveContexts, isoDate, type ISODate, type NodeContext } from '../context/resolve';
 import type { Services } from '../services/types';
 import { memoize } from '../services/memo';
-import { httpServices } from '../services/http';
+import { httpServices, TransientError } from '../services/http';
 
 export type PlaceStatus = 'pending' | 'missing' | 'error';
 
@@ -28,6 +28,8 @@ interface Store {
   setFocus(update: Focus | null | ((f: Focus | null) => Focus | null)): void;
   replaceDoc(doc: Doc): void;
   resolvePlace(key: string): Promise<Place | null>;
+  /** Try a place again now (tap on a "couldn't reach" chip). */
+  retryPlace(key: string): void;
 }
 
 interface State {
@@ -64,11 +66,11 @@ interface Props {
   /** null disables persistence (tests, or browsers with site data blocked). */
   storage?: Storage | null;
   today?: ISODate;
-  /** Backoff for places whose lookup failed because a service was unreachable. */
+  /** Backoff for places whose lookup failed because a service was unreachable; the last delay repeats. */
   retryDelaysMs?: number[];
 }
 
-const RETRY_DELAYS_MS = [3000, 10000, 30000, 60000];
+const RETRY_DELAYS_MS = [3000, 10000, 30000, 60000, 180000];
 
 export function DocProvider({
   children,
@@ -106,16 +108,29 @@ export function DocProvider({
   statusRef.current = placeStatus;
   const attempts = useRef(new Map<string, number>());
   const waiters = useRef(new Map<string, ((p: Place | null) => void)[]>());
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const [retryTick, setRetryTick] = useState(0);
+  // Keys mentioned in the text; filled during render (below) so formulas, whose
+  // effects run before ours, already know to wait for the biased mention lookup.
+  const mentioned = useRef(new Set<string>());
 
   const settle = useCallback((key: string, place: Place | null) => {
     waiters.current.get(key)?.forEach((resolve) => resolve(place));
     waiters.current.delete(key);
   }, []);
 
+  const lookUpRef = useRef<(key: string, near?: Place) => Promise<void>>(async () => {});
+
+  /** Mentions are re-requested by the effect; a place only formulas use is looked up here. */
+  const retry = useCallback((key: string) => {
+    requested.current.delete(key);
+    if (!mentioned.current.has(key) && waiters.current.has(key)) void lookUpRef.current(key);
+    setRetryTick((t) => t + 1);
+  }, []);
+
   /**
    * One lookup per key. "Not found" only when the services answered with nothing;
-   * an unreachable service is an "error" that is retried with backoff.
+   * an unreachable service is an "error" that keeps being retried (the last delay repeats).
    */
   const lookUp = useCallback(
     async (key: string, near?: Place) => {
@@ -123,41 +138,63 @@ export function DocProvider({
       setPlaceStatus((s) => ({ ...s, [key]: 'pending' }));
       try {
         const place = await services.geocode(key, near);
+        attempts.current.delete(key);
         if (place) apply((d) => (d.places[key] ? { doc: d } : setPlace(d, key, place)));
         setPlaceStatus((s) => {
           const { [key]: _done, ...rest } = s;
           return place ? rest : { ...rest, [key]: 'missing' };
         });
         settle(key, place);
-      } catch {
-        const n = attempts.current.get(key) ?? 0;
-        setPlaceStatus((s) => ({ ...s, [key]: 'error' }));
-        if (n < retryDelaysMs.length) {
-          attempts.current.set(key, n + 1);
-          setTimeout(() => {
-            requested.current.delete(key);
-            setRetryTick((t) => t + 1);
-          }, retryDelaysMs[n]);
-        } else {
+      } catch (e) {
+        if (!(e instanceof TransientError)) {
+          setPlaceStatus((s) => ({ ...s, [key]: 'missing' }));
           settle(key, null);
+          return;
         }
+        const n = attempts.current.get(key) ?? 0;
+        attempts.current.set(key, n + 1);
+        setPlaceStatus((s) => ({ ...s, [key]: 'error' }));
+        const timer = setTimeout(() => {
+          timers.current.delete(timer);
+          retry(key);
+        }, retryDelaysMs[Math.min(n, retryDelaysMs.length - 1)]);
+        timers.current.add(timer);
       }
     },
-    [services, apply, settle, retryDelaysMs],
+    [services, apply, settle, retry, retryDelaysMs],
+  );
+  lookUpRef.current = lookUp;
+
+  const retryPlace = useCallback(
+    (key: string) => {
+      attempts.current.delete(key);
+      retry(key);
+    },
+    [retry],
   );
 
-  /** A new document may lack places this session already looked up, so lookups start over. */
-  const load = useCallback((doc: Doc, keepFocus: boolean) => {
-    requested.current.clear();
-    attempts.current.clear();
-    for (const key of [...waiters.current.keys()]) settle(key, doc.places[key] ?? null);
-    setPlaceStatus({});
-    setState((s) => next(s, doc, keepFocus && s.focus && doc.nodes[s.focus.id] ? s.focus : null));
-  }, [settle]);
+  const clearTimers = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current.clear();
+  }, []);
+  useEffect(() => clearTimers, [clearTimers]);
+
+  /**
+   * A new document may lack places this session already looked up, so lookups
+   * start over. Waiting formulas stay waiting; the new document's lookups settle them.
+   */
+  const load = useCallback(
+    (doc: Doc, keepFocus: boolean) => {
+      clearTimers();
+      requested.current.clear();
+      attempts.current.clear();
+      setPlaceStatus({});
+      setState((s) => next(s, doc, keepFocus && s.focus && doc.nodes[s.focus.id] ? s.focus : null));
+    },
+    [clearTimers],
+  );
 
   const replaceDoc = useCallback((doc: Doc) => load(doc, false), [load]);
-
-  const mentioned = useRef(new Set<string>());
 
   /**
    * For formulas. A key that is mentioned somewhere waits for that mention's
@@ -185,12 +222,14 @@ export function DocProvider({
   }, [state.doc, frozen]);
 
   const contexts = useMemo(() => resolveContexts(viewDoc, today), [viewDoc, today]);
+  mentioned.current = useMemo(() => {
+    const keys = new Set<string>();
+    for (const ctx of contexts.values()) ctx.ownPlaces.forEach((k) => keys.add(k));
+    return keys;
+  }, [contexts]);
 
   // Look up mentions top-down: a child waits for its parent's place so the lookup can be biased to it.
   useEffect(() => {
-    const keys = new Set<string>();
-    for (const ctx of contexts.values()) ctx.ownPlaces.forEach((k) => keys.add(k));
-    mentioned.current = keys;
     for (const ctx of contexts.values()) {
       const parentKey = ctx.inheritedPlaceKey;
       const parent = parentKey ? viewDoc.places[parentKey] : undefined;
@@ -203,19 +242,19 @@ export function DocProvider({
     }
   }, [contexts, viewDoc.places, placeStatus, lookUp, retryTick]);
 
-  // Coming back online retries everything the services couldn't answer.
+  // Coming back online, or back to the app, retries everything the services couldn't answer.
   useEffect(() => {
-    const onOnline = () => {
-      for (const [key, status] of Object.entries(statusRef.current)) {
-        if (status !== 'error') continue;
-        attempts.current.delete(key);
-        requested.current.delete(key);
-      }
-      setRetryTick((t) => t + 1);
+    const retryAll = () => {
+      for (const [key, status] of Object.entries(statusRef.current)) if (status === 'error') retryPlace(key);
     };
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  }, []);
+    const onVisible = () => document.visibilityState === 'visible' && retryAll();
+    window.addEventListener('online', retryAll);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', retryAll);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [retryPlace]);
 
   // ---- persistence: debounced save, flush on hide, follow other tabs ----
   const lastWritten = useRef<string | null>(null);
@@ -274,6 +313,7 @@ export function DocProvider({
     setFocus,
     replaceDoc,
     resolvePlace,
+    retryPlace,
   };
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

@@ -56,3 +56,15 @@ describe('insertMention', () => {
     expect(insertMention('@x', m, 'Weird ] Name').text).toBe('@[Weird  Name] ');
   });
 });
+
+describe('review fixes', () => {
+  it('an escaped \\@ does not open the picker', () => {
+    expect(activeMention('type \\@Place', 12)).toBeNull();
+  });
+
+  it('uses brackets for names the tokenizer would not read as one word', () => {
+    const m = activeMention('@x', 2)!;
+    expect(insertMention('@x', m, "O'").text).toBe("@[O'] ");
+    expect(insertMention('@x', m, 'Saint-').text).toBe('@[Saint-] ');
+  });
+});

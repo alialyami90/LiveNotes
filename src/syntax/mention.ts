@@ -12,7 +12,7 @@ const WORD_CHAR = /[\p{L}\d]/u;
 
 export function activeMention(text: string, caret: number): ActiveMention | null {
   const start = text.lastIndexOf('@', caret - 1);
-  if (start < 0 || (start > 0 && WORD_CHAR.test(text[start - 1]))) return null;
+  if (start < 0 || (start > 0 && (WORD_CHAR.test(text[start - 1]) || text[start - 1] === '\\'))) return null;
 
   if (text[start + 1] === '[') {
     const typed = text.slice(start + 2, caret);
@@ -32,7 +32,8 @@ export function activeMention(text: string, caret: number): ActiveMention | null
 /** Replaces the mention with the picked name; returns the new text and where the caret goes. */
 export function insertMention(text: string, m: ActiveMention, name: string): { text: string; caret: number } {
   const clean = name.replace(/[[\]]/g, '').trim();
-  const token = /^[\p{L}\d_'’-]+$/u.test(clean) ? `@${clean}` : `@[${clean}]`;
+  // Same rule as the tokenizer's @Word, so the inserted mention reads back as this name.
+  const token = /^[\p{L}\d_'’-]*[\p{L}\d]$/u.test(clean) ? `@${clean}` : `@[${clean}]`;
   const after = text.slice(m.end);
   const spacer = after === '' || /^[\p{L}\d]/u.test(after) ? ' ' : '';
   const replaced = text.slice(0, m.start) + token + spacer;

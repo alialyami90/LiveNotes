@@ -23,7 +23,8 @@ export default function MapView({ id }: { id: NodeId }) {
 
   const stops = collectPlaces(doc, contexts, id);
   const unresolved = unresolvedPlaces(doc, contexts, id);
-  const pending = unresolved.filter((k) => placeStatus[k] !== 'missing');
+  const pending = unresolved.filter((k) => placeStatus[k] !== 'missing' && placeStatus[k] !== 'error');
+  const unreachable = unresolved.filter((k) => placeStatus[k] === 'error');
   const notFound = unresolved.filter((k) => placeStatus[k] === 'missing');
   const stopsKey = JSON.stringify(stops.map((s) => [s.nodeId, s.place.lat, s.place.lon]));
 
@@ -85,8 +86,11 @@ export default function MapView({ id }: { id: NodeId }) {
     <>
       <div ref={el} className={`map${stops.length === 0 ? ' is-empty' : ''}`} />
       {stops.length === 0 && pending.length > 0 && <div className="view-empty">Finding places…</div>}
-      {stops.length === 0 && pending.length === 0 && (
+      {stops.length === 0 && pending.length === 0 && unreachable.length === 0 && (
         <div className="view-empty">No places to show yet — mention one like @Lisbon.</div>
+      )}
+      {unreachable.length > 0 && (
+        <div className="view-note">Couldn’t reach the place service for {unreachable.join(', ')} — retrying. Tap a ⟳ place to retry now.</div>
       )}
       {notFound.length > 0 && (
         <div className="view-note">Couldn’t find: {notFound.join(', ')}. Edit the mention and pick a suggestion.</div>

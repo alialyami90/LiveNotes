@@ -34,15 +34,18 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   const text = doc.nodes[id].text;
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  // The @mention under the caret drives the place picker.
+  // The @mention under the caret drives the place picker, but only once the user
+  // types in it: tapping a row that ends in "@Lisbon" must not hijack Enter/Tab/arrows.
   const [caretPos, setCaretPos] = useState(focus.caret);
+  const [armedAt, setArmedAt] = useState<number | null>(null);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [active, setActive] = useState(0);
   const mention = activeMention(text, caretPos);
-  const pickerOpen = mention !== null && mention.start !== dismissedAt;
+  const pickerOpen = mention !== null && mention.start === armedAt && mention.start !== dismissedAt;
   const nearKey = contexts.get(id)?.inheritedPlaceKey;
   const { items, loading } = usePlaceSearch(pickerOpen ? mention.query : null, nearKey ? viewDoc.places[nearKey] : undefined);
   const showing = pickerOpen && (items.length > 0 || loading);
+  const highlighted = Math.min(active, Math.max(items.length - 1, 0));
   const trackCaret = () => setCaretPos(ref.current?.selectionStart ?? 0);
 
   const pick = (s: Suggestion) => {
@@ -51,6 +54,7 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
     const key = placeKey(s.place.name.replace(/[[\]]/g, ''));
     apply((d) => setPlace(setText(d, id, next.text).doc, key, s.place), { id, caret: next.caret });
     setCaretPos(next.caret);
+    setArmedAt(null);
     setActive(0);
   };
 
@@ -90,9 +94,9 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         if (items.length) setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
         return;
       }
-      if ((e.key === 'Enter' || e.key === 'Tab') && items[active]) {
+      if ((e.key === 'Enter' || e.key === 'Tab') && items[highlighted]) {
         e.preventDefault();
-        pick(items[active]);
+        pick(items[highlighted]);
         return;
       }
       if (e.key === 'Escape') {
@@ -147,13 +151,14 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
         onChange={(e) => {
           apply((d) => setText(d, id, e.target.value));
           setCaretPos(e.target.selectionStart);
+          setArmedAt(activeMention(e.target.value, e.target.selectionStart)?.start ?? null);
           setActive(0);
         }}
         onSelect={trackCaret}
         onKeyDown={onKeyDown}
         onBlur={() => setFocus((f) => (f?.id === id ? null : f))}
       />
-      {showing && <PlacePicker items={items} active={Math.min(active, Math.max(items.length - 1, 0))} loading={loading} onPick={pick} onHover={setActive} />}
+      {showing && <PlacePicker items={items} active={highlighted} loading={loading} onPick={pick} onHover={setActive} />}
     </div>
   );
 }

@@ -165,6 +165,85 @@ describe('httpServices geocoding', () => {
   });
 });
 
+describe('review fixes: geocode edge cases', () => {
+  it('does not settle for a far-away namesake when Photon could not be reached', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Ribeira', 42.6, -8.99, 'Galicia', 'Spain']) },
+      { match: PHOTON, respond: () => ({ status: 503 }) },
+    ]);
+    await expect(httpServices(f.fn, noSleep).geocode('ribeira', { name: 'Porto', lat: 41.15, lon: -8.61 })).rejects.toBeInstanceOf(TransientError);
+  });
+
+  it('a permanent Open-Meteo error still lets Photon answer', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => ({ status: 400 }) },
+      { match: PHOTON, respond: () => photon(['Corniche', 26.3, 50.22, 'Khobar', 'Saudi Arabia']) },
+    ]);
+    expect((await httpServices(f.fn, noSleep).geocode('corniche'))?.name).toBe('Corniche');
+    expect((await httpServices(f.fn, noSleep).search('corniche')).map((p) => p.name)).toEqual(['Corniche']);
+  });
+
+  it('Photon retries wait at least the Photon spacing', async () => {
+    let n = 0;
+    const sleeps: number[] = [];
+    const f = fakeFetch([
+      { match: OM, respond: () => ({ body: {} }) },
+      { match: PHOTON, respond: () => (++n < 2 ? { status: 503 } : photon(['X', 1, 2, 'Y', 'Z'])) },
+    ]);
+    await httpServices(f.fn, { sleep: async (ms) => { sleeps.push(ms); }, photonGapMs: 1500 }).geocode('x');
+    expect(sleeps.every((ms) => ms >= 1500)).toBe(true);
+  });
+});
+
+describe('review fixes: responsive search', () => {
+  it('hands over town results before Photon answers', async () => {
+    let releasePhoton: () => void = () => {};
+    const photonGate = new Promise<void>((r) => { releasePhoton = r; });
+    const fn = (async (url: string) => {
+      if (PHOTON.test(url)) await photonGate;
+      const body = OM.test(url) ? om(['Porto', 41.15, -8.61, 'Porto', 'Portugal']).body : { features: [] };
+      return { ok: true, status: 200, json: async () => body };
+    }) as unknown as typeof fetch;
+    const towns: string[][] = [];
+    const done = httpServices(fn, noSleep).search('porto', undefined, { onTowns: (p) => towns.push(p.map((x) => x.name)) });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(towns).toEqual([['Porto']]);
+    releasePhoton();
+    expect((await done).map((p) => p.name)).toEqual(['Porto']);
+  });
+
+  it('skips a queued search that was cancelled before its turn', async () => {
+    const f = fakeFetch([
+      { match: OM, respond: () => ({ body: {} }) },
+      { match: PHOTON, respond: () => photon(['X', 1, 2, 'Y', 'Z']) },
+    ]);
+    const s = httpServices(f.fn, { sleep: (ms) => new Promise((r) => setTimeout(r, ms)), photonGapMs: 30 });
+    const first = s.search('aaa');
+    const controller = new AbortController();
+    const second = s.search('bbb', undefined, { signal: controller.signal });
+    controller.abort();
+    await first;
+    await second.catch(() => undefined);
+    expect(f.urls.filter((u) => PHOTON.test(u) && u.includes('q=bbb'))).toEqual([]);
+  });
+
+  it('a search typed by the user jumps ahead of background lookups', async () => {
+    const order: string[] = [];
+    const fn = (async (url: string) => {
+      if (PHOTON.test(url)) order.push(new URL(url).searchParams.get('q')!);
+      const body = OM.test(url) ? {} : photon(['X', 1, 2, 'Y', 'Z']).body;
+      return { ok: true, status: 200, json: async () => body };
+    }) as unknown as typeof fetch;
+    const s = httpServices(fn, { sleep: (ms) => new Promise((r) => setTimeout(r, ms)), photonGapMs: 20 });
+    const background = ['bg1', 'bg2', 'bg3'].map((q) => s.geocode(q));
+    await new Promise((r) => setTimeout(r, 5));
+    const typed = s.search('typed');
+    await Promise.all([...background, typed]);
+    expect(order.indexOf('typed')).toBeLessThan(order.indexOf('bg3'));
+    expect(order.indexOf('typed')).toBeLessThanOrEqual(1);
+  });
+});
+
 describe('httpServices search (autocomplete)', () => {
   it('merges nearby landmarks and ranked towns, without duplicates', async () => {
     const f = fakeFetch([

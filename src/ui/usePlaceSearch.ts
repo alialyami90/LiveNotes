@@ -29,18 +29,24 @@ export function usePlaceSearch(query: string | null, near?: Place): { items: Sug
       return;
     }
     let live = true;
+    const controller = new AbortController();
     setLoading(true);
     const timer = setTimeout(() => {
       services
-        .search(trimmed, near)
+        .search(trimmed, near, {
+          signal: controller.signal,
+          // Towns answer fast; show them while landmark results are still queued.
+          onTowns: (towns) => live && setRemote((current) => (current.length ? current : towns)),
+        })
         .then(
           (items) => live && setRemote(items),
-          () => live && setRemote([]),
+          () => undefined,
         )
         .finally(() => live && setLoading(false));
     }, DEBOUNCE_MS);
     return () => {
       live = false;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [query === null, trimmed, near?.lat, near?.lon, services]);

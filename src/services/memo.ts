@@ -20,7 +20,8 @@ export function memoize(services: Services): Services {
     };
   return {
     geocode: wrap('geocode', (name: string, near?: Place) => services.geocode(name, near)),
-    search: wrap('search', (query: string, near?: Place) => services.search(query, near)),
+    // Searches carry a signal and a callback, and the user's typing makes repeats rare.
+    search: (query, near, opts) => services.search(query, near, opts),
     weather: wrap('weather', (p, iso) => services.weather(p, iso)),
     route: wrap('route', (a, b) => services.route(a, b)),
   };

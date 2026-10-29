@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { parseImport } from '../model/storage';
 import { sampleDoc } from '../model/sample';
 import { exportDocument } from '../platform/export';
@@ -10,6 +10,16 @@ export function App() {
   const { doc, replaceDoc } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!headerRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [menuOpen]);
 
   const onImport = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -22,7 +32,7 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" ref={headerRef}>
         <div className="brand">
           <span className="logo" aria-hidden>
             ✦
