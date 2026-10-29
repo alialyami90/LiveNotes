@@ -1,8 +1,9 @@
 import type { Place } from '../model/types';
 import type { Weather } from '../formula/values';
 import type { Services } from './types';
-import { haversine } from './geo';
+import { areaOf, inArea, type Box } from './geo';
 import { isStreetTag, kindOfOpenMeteo, kindOfPhoton, photonExtent } from './kinds';
+import { isMajor, isNear, mergeSearch, toPlace, type Candidate, type SearchSources } from './rank';
 
 /** The service couldn't be reached or is overloaded; worth retrying later. */
 export class TransientError extends Error {}
@@ -44,22 +45,8 @@ export interface HttpOptions {
 }
 
 const RETRY_DELAYS_MS = [700, 2000];
-/** A town match further than this from the surrounding place is probably a namesake... */
-const NEAR_KM = 75;
-/** ...unless it's a major city: "@Dammam" under Riyadh means the city, not a local namesake. */
-const MAJOR_CITY = 100_000;
-
-/** Candidates carry ranking hints that are dropped before a Place is stored. */
-type Candidate = Place & { population?: number; street?: boolean };
-const toPlace = ({ name, lat, lon, label, kind, extent }: Candidate): Place => ({
-  name,
-  lat,
-  lon,
-  ...(label ? { label } : {}),
-  ...(kind ? { kind } : {}),
-  ...(extent ? { extent } : {}),
-});
-const SAME_PLACE_M = 2000;
+/** Five decimals is about a metre; it keeps bbox URLs short. */
+const coord = (n: number) => Number(n.toFixed(5));
 
 const label = (...parts: (string | undefined)[]) =>
   parts.filter((p, i, all): p is string => !!p && all.indexOf(p) === i).join(', ');
@@ -150,9 +137,18 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
     }));
   }
 
-  function photon(q: string, limit: number, near: Place | undefined, priority: 'interactive' | 'background', signal?: AbortSignal): Promise<Candidate[]> {
+  /** With `box`, only results inside it ([west, south, east, north]); `near` still ranks them. */
+  function photon(
+    q: string,
+    limit: number,
+    near: Place | undefined,
+    priority: 'interactive' | 'background',
+    signal?: AbortSignal,
+    box?: Box,
+  ): Promise<Candidate[]> {
     const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=${limit}&lang=en${bias}`;
+    const bbox = box ? `&bbox=${box.map(coord).join(',')}` : '';
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=${limit}&lang=en${bias}${bbox}`;
     return viaPhotonQueue(async () => {
       const data = await getJson<PhotonResponse>(url, 'place lookup unavailable', photonGapMs);
       return (data.features ?? []).map((f) => {
@@ -188,39 +184,45 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
   const failure = (...results: { failed: boolean; transient: boolean }[]) =>
     results.some((r) => r.transient) ? new TransientError('place lookup unavailable') : new Error('place lookup failed');
 
-  const isNear = (p: Place, near?: Place) => !near || haversine(p, near) <= NEAR_KM * 1000;
-  const isMajor = (p?: Candidate) => (p?.population ?? 0) >= MAJOR_CITY;
-
   return {
     async geocode(name, near) {
       const om = await settle(openMeteo(name, 1));
       const town = om.value[0];
-      if (town && (isNear(town, near) || isMajor(town))) return toPlace(town);
+      // A major city, or a town inside the parent's area, is what the mention means.
+      if (town && (!near || isMajor(town) || inArea(town, areaOf(near)))) return toPlace(town);
+      // Then the best named place inside the area: "@airport" under Barcelona is El Prat.
+      const area = near ? await settle(photon(name, 5, near, 'background', undefined, areaOf(near))) : undefined;
+      const inside = area?.value.find((p) => !p.street);
+      if (inside) return toPlace(inside);
+      // Then the worldwide rules: a nearby town, else the biased landmark, which a street never is.
+      if (town && isNear(town, near)) return toPlace(town);
       const ph = await settle(photon(name, 1, near, 'background'));
       const landmark = ph.value[0];
       if (landmark && !(landmark.street && town)) return toPlace(landmark);
-      // A far-away namesake is only acceptable once Photon has really answered.
-      if (town && !ph.transient) return toPlace(town);
-      if (om.failed || ph.failed) throw failure(om, ph);
+      // A far-away namesake is only acceptable once Photon has really answered, area search included.
+      if (town && !ph.transient && !area?.transient) return toPlace(town);
+      const tried = area ? [om, area, ph] : [om, ph];
+      if (tried.some((r) => r.failed)) throw failure(...tried);
       return null;
     },
 
-    async search(query, near, opts = {}) {
-      const townsP = settle(openMeteo(query, 5));
-      void townsP.then((r) => r.value.length && opts.onTowns?.(r.value.map(toPlace)), () => undefined);
-      const [om, ph] = await Promise.all([townsP, settle(photon(query, 5, near, 'interactive', opts.signal))]);
-      if (om.failed && ph.failed) throw failure(om, ph);
-      // Major cities lead; then, near a known place, biased landmarks; then the remaining towns.
-      const majors = om.value.filter((p) => isMajor(p));
-      const towns = om.value.filter((p) => !isMajor(p));
-      const ordered = near
-        ? [...majors, ...ph.value.filter((p) => isNear(p, near)), ...towns, ...ph.value.filter((p) => !isNear(p, near))]
-        : [...majors, ...towns, ...ph.value];
-      const out: Place[] = [];
-      for (const p of ordered) {
-        if (!out.some((o) => haversine(o, p) < SAME_PLACE_M && o.name.toLowerCase() === p.name.toLowerCase())) out.push(toPlace(p));
-      }
-      return out.slice(0, 8);
+    async search(query, near, { signal, onUpdate } = {}) {
+      let sources: SearchSources = { towns: [], area: [], biased: [] };
+      // Each stage shows everything so far as soon as it answers; the queued Photon stages come later.
+      const stage = (key: keyof SearchSources, p: Promise<Candidate[]>) =>
+        settle(p).then((r) => {
+          sources = { ...sources, [key]: r.value };
+          if (!signal?.aborted) onUpdate?.(mergeSearch(sources, near));
+          return r;
+        });
+      const results = await Promise.all([
+        stage('towns', openMeteo(query, 5)),
+        ...(near ? [stage('area', photon(query, 8, near, 'interactive', signal, areaOf(near)))] : []),
+        // Still runs when the area stage fails: it fills the Elsewhere rows.
+        stage('biased', photon(query, 5, near, 'interactive', signal)),
+      ]);
+      if (results.every((r) => r.failed)) throw failure(...results);
+      return mergeSearch(sources, near);
     },
 
     async weather(p, iso) {

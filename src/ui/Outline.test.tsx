@@ -395,6 +395,27 @@ describe('place picker', () => {
     expect(geocoded).toEqual([]);
   });
 
+  it('stores a picked Elsewhere row without its section flag', async () => {
+    let places: Doc['places'] = {};
+    function Probe() {
+      places = useStore().doc.places;
+      return null;
+    }
+    const svc: Services = { ...services, search: async () => [{ ...LISBOA, elsewhere: true }] };
+    const user = userEvent.setup();
+    render(
+      <DocProvider initialDoc={build([['a', 'Visit']])} services={svc} storage={null} today="2026-10-28">
+        <Outline />
+        <Probe />
+      </DocProvider>,
+    );
+    await user.click(screen.getByText('Visit'));
+    await user.keyboard('{End} @lis');
+    await user.click((await screen.findAllByRole('option'))[0]);
+    await waitFor(() => expect(places.lisbon).toEqual(LISBOA));
+    expect(places.lisbon).not.toHaveProperty('elsewhere');
+  });
+
   it('arrow keys and Enter pick a suggestion without splitting the bullet', async () => {
     const { user, container } = setupPicker(build([['a', 'Visit']]));
     await user.click(screen.getByText('Visit'));
@@ -580,7 +601,7 @@ describe('review fixes: responsive picker', () => {
       ...services,
       search: (q, _near, opts) => {
         if (opts?.signal) signals.push(opts.signal);
-        opts?.onTowns?.([{ name: `Town ${q}`, lat: 1, lon: 2, label: `Town ${q}, Somewhere` }]);
+        opts?.onUpdate?.([{ name: `Town ${q}`, lat: 1, lon: 2, label: `Town ${q}, Somewhere` }]);
         return new Promise(() => {}); // landmarks never arrive
       },
     };

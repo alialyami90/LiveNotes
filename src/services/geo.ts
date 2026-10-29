@@ -10,3 +10,34 @@ export function haversine(a: Pick<Place, 'lat' | 'lon'>, b: Pick<Place, 'lat' | 
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
+
+/** [west, south, east, north] in degrees, the order Photon's `bbox` takes. */
+export type Box = [number, number, number, number];
+
+/** Without a known extent, a place's area reaches this far in each direction. */
+export const AREA_KM = 30;
+
+const isBox = (e: unknown): e is Box =>
+  Array.isArray(e) &&
+  e.length === 4 &&
+  e.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
+  e[0] < e[2] &&
+  e[1] < e[3];
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+/**
+ * The area a bullet's children are searched in: the place's own extent, or a box around it.
+ * Imported documents can hold any `extent`, so a malformed one falls back to the box.
+ */
+export function areaOf(p: Place): Box {
+  if (isBox(p.extent)) return [...p.extent];
+  const dLat = (AREA_KM * 1000) / (EARTH_RADIUS_M * rad(1));
+  // Near the poles a degree of longitude shrinks to nothing; the clamp keeps the box finite.
+  const dLon = dLat / Math.max(Math.cos(rad(p.lat)), 0.01);
+  return [clamp(p.lon - dLon, -180, 180), clamp(p.lat - dLat, -90, 90), clamp(p.lon + dLon, -180, 180), clamp(p.lat + dLat, -90, 90)];
+}
+
+export function inArea(p: Pick<Place, 'lat' | 'lon'>, [west, south, east, north]: Box): boolean {
+  return p.lon >= west && p.lon <= east && p.lat >= south && p.lat <= north;
+}
