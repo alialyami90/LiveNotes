@@ -26,3 +26,10 @@
 /* Full --ink-soft, no opacity: at 0.6 the placeholder fell to 2.5:1, under even the 3:1 large-text floor. */
 .title-field::placeholder { color: var(--ink-soft); opacity: 1; }
 .title-field::selection { background: var(--accent-wash); }
+/* A text field shows focus while typing (WCAG 2.4.7). An ember underline, as a shadow so
+   the title's 44px box and line metrics stay exactly as they are. */
+.title-field:focus-visible { box-shadow: 0 2px 0 var(--accent); }
+/* Forced colours drop shadows; give the system an outline there instead. */
+@media (forced-colors: active) {
+  .title-field:focus-visible { outline: 2px solid; outline-offset: 2px; }
+}
