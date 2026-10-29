@@ -38,7 +38,10 @@ function seeded(storage: Storage, ids: string[], now?: () => number) {
 }
 
 const home = () => document.querySelector('main[data-screen="home"]');
-const titles = () => [...document.querySelectorAll('main[data-screen="home"] a')].map((a) => a.textContent);
+const titles = () =>
+  [...document.querySelectorAll('main[data-screen="home"] :is(.note-card__title, .pinned-chip__title)')].map(
+    (t) => t.textContent,
+  );
 const noteIdFromHash = () => /^#\/note\/(.+)$/.exec(location.hash)?.[1];
 
 async function createNote(user: ReturnType<typeof userEvent.setup>) {

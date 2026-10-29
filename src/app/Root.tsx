@@ -8,8 +8,10 @@ import { httpServices } from '../services/http';
 import { isBlankDoc } from '../library/blank';
 import { LibraryProvider, useLibrary } from '../library/LibraryProvider';
 import { memoryStorage } from '../library/memoryStorage';
+import { Archive } from '../home/Archive';
+import { Home, PendingUndo } from '../home/Home';
 import { NoteRoute } from './NoteRoute';
-import { navigate, useRoute, type Route } from './router';
+import { useRoute, type Route } from './router';
 
 interface Props {
   storage?: Storage;
@@ -38,7 +40,12 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
   if (route.name === 'note') {
     return <NoteRoute key={route.id} id={route.id} storage={storage} services={services} onDoc={onDoc} />;
   }
-  return <HomePlaceholder archive={route.name === 'archive'} />;
+  return (
+    <>
+      {route.name === 'archive' ? <Archive /> : <Home />}
+      <PendingUndo />
+    </>
+  );
 }
 
 /**
@@ -65,36 +72,4 @@ function useDiscardOnLeave(route: Route, lastDocs: Map<string, Doc>) {
     }
     refresh();
   }, [openId, lastDocs, library, refresh, isNewThisSession]);
-}
-
-/** Stand-in until the timeline home lands. */
-function HomePlaceholder({ archive }: { archive: boolean }) {
-  const { metas, library, refresh } = useLibrary();
-  const shown = metas.filter((m) => m.deletedAt === undefined && !!m.archived === archive);
-  const create = () => {
-    let id: string;
-    try {
-      id = library.create().id;
-    } catch (e) {
-      console.warn('LiveNotes: could not create a note', e);
-      alert('Could not create a note: storage is full or unavailable.');
-      return;
-    }
-    refresh();
-    navigate(`#/note/${encodeURIComponent(id)}`);
-  };
-  return (
-    <main data-screen="home">
-      <ul>
-        {shown.map((m) => (
-          <li key={m.id}>
-            <a href={`#/note/${encodeURIComponent(m.id)}`}>{m.summary.title || 'Untitled'}</a>
-          </li>
-        ))}
-      </ul>
-      <button type="button" onClick={create}>
-        New note
-      </button>
-    </main>
-  );
 }
