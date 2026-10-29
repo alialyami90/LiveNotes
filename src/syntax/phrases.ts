@@ -31,18 +31,20 @@ const MODE_ALT = [...BY_WORD.keys()].sort((a, b) => b.length - a.length).join('|
 const WEATHER_ALT = 'weather|forecast';
 // A phrase word is a whole word, not escaped with a backslash, and not glued to
 // its neighbour by a joiner (weather.com, a/weather, me@weather, weather-proof,
-// weather_report). Sentence punctuation like "weather." or "(weather)" still matches.
+// weather_report), nor a possessive (weather's). Sentence punctuation like
+// "weather." or "(weather)" still matches.
 const BEFORE = String.raw`(?<![\p{L}\d_\\]|[\p{L}\d][.\/@:-])`;
-const AFTER = String.raw`(?![\p{L}\d_]|[.\/@:-][\p{L}\d])`;
+const AFTER = String.raw`(?![\p{L}\d_]|[.\/@:-][\p{L}\d]|['’]\p{L})`;
 // R3: whitespace inside a phrase never crosses a line break.
 const WS = String.raw`[^\S\n]+`;
 
 /**
  * A backslash directly before a phrase word; `displayText` hides it like `\@`.
- * Only at the start of a word, so `C:\Docs\train` and `foo\weather` keep theirs.
+ * Only at the start of a word, so `C:\Docs\train`, `C:\bus`, `a/\weather` and
+ * `foo\weather` keep theirs.
  */
 export const PHRASE_ESCAPE = new RegExp(
-  String.raw`(?<![\p{L}\d_\\])\\(?=(?:${MODE_ALT}|${WEATHER_ALT})${AFTER})`,
+  String.raw`(?<![\p{L}\d_\\:/])\\(?=(?:${MODE_ALT}|${WEATHER_ALT})${AFTER})`,
   'giu',
 );
 

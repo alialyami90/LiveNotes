@@ -57,6 +57,11 @@
 }
 .chip-formula.is-pending { border-style: dashed; border-color: currentColor; }
 .chip-formula.is-error { background: var(--error-bg); color: var(--error-ink); }
+/* The travel chip follows its destination's chip with no text between; a step of air
+   keeps "Porto" and "🚗 …" reading as two things. Adjacency, not .kind-travel, so the
+   pending "…" and error states (and transit's wrapper) get it too. */
+.chip-place + .chip-formula,
+.chip-place + .chip-wrap { margin-left: var(--sp-1); }
 
 /* Transit's "Directions ↗" (R11): a plain link inside the travel chip, in the chip's ink. */
 .chip-link {

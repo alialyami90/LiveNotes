@@ -111,6 +111,7 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
         <footer className="legend">
           <span><code>@Place</code> or <code>@[Two Words]</code> mentions a place</span>
           <span><code>Nov 3</code> mentions a date</span>
+          <span><code>weather</code> or <code>drive to @Place</code> in plain words</span>
           <span><code>{'{weather()}'}</code> <code>{'{route(prev, here)}'}</code> formulas</span>
           <span><code>/map</code> <code>/calendar</code> <code>/table</code> + Enter adds a view</span>
         </footer>

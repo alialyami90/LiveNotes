@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadDoc, safeStorage, saveDoc, STORAGE_KEY } from './storage';
 import { sampleDoc } from './sample';
-import { tokenize } from '../syntax/tokenize';
+import { displayText, tokenize } from '../syntax/tokenize';
 
 const store = (v: string | null) => ({ getItem: (k: string) => (k === STORAGE_KEY ? v : null) });
 
@@ -77,6 +77,32 @@ describe('storage', () => {
     for (const f of ['weather(', 'route(', 'distance(']) expect(formulas).toContain(f);
     expect(segs.some((s) => s.kind === 'weather')).toBe(true);
     expect(segs.some((s) => s.kind === 'route')).toBe(true);
+  });
+
+  it('sampleDoc gives its places a kind, so the sample shows place icons (M6)', () => {
+    const kinds = Object.fromEntries(Object.entries(sampleDoc().places).map(([k, p]) => [k, p.kind]));
+    expect(kinds).toEqual({
+      lisbon: 'city',
+      porto: 'city',
+      coimbra: 'city',
+      sintra: 'city',
+      'vila nova de gaia': 'city',
+      cascais: 'city',
+      'pinhão': 'village',
+      'belém tower': 'sight',
+      'praça do comércio': 'sight',
+      'miradouro da senhora do monte': 'sight',
+      'time out market': 'restaurant',
+      'livraria lello': 'shop',
+      'pastéis de belém': 'cafe',
+    });
+  });
+
+  it('sampleDoc\'s "How this works" bullet mentions the plain-word phrases, as plain text (M6)', () => {
+    const how = Object.values(sampleDoc().nodes).find((n) => n.text.startsWith('How this works'))!;
+    expect(displayText(how.text)).toMatch(/plain words like weather or drive to @Place/);
+    const segs = tokenize(how.text);
+    expect(segs.some((s) => s.kind === 'weather' || s.kind === 'route' || s.kind === 'place')).toBe(false);
   });
 
   it('sampleDoc has a valid tree with nodes reachable from root', () => {

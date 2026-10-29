@@ -223,6 +223,8 @@ describe('Root', () => {
     const { user, container, storage } = setup();
     const id = await createNote(user);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Home tells the user once that the note was left unsaved (M7: stubbed, so jsdom stays quiet).
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
     const setItem = storage.setItem.bind(storage);
     vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
       if (k === noteKey(id)) throw new DOMException('full', 'QuotaExceededError');
@@ -233,6 +235,8 @@ describe('Root', () => {
     await goHome();
     expect(storage.getItem(INDEX_KEY)).toContain(id);
     expect(storage.getItem(noteKey(id))).not.toBeNull();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith('Could not save the note: storage is full or unavailable.');
   });
 
   it('New note reports a failed create instead of crashing', async () => {

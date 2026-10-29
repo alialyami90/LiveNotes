@@ -154,6 +154,7 @@ export function FormulaChip({ nodeId, source }: { nodeId: NodeId; source: string
             href={value.directionsUrl}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label="Public transport directions in Google Maps (opens in a new tab)"
             onClick={(e) => e.stopPropagation()}
           >
             Directions ↗

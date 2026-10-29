@@ -272,3 +272,16 @@ describe('chained routes in one bullet (I3)', () => {
   });
 });
 
+describe('minor phrase guards', () => {
+  it('M1: a possessive weather word stays plain', () => {
+    expect(kinds('the weather’s fine')).toEqual(['text']);
+    expect(kinds("the weather's fine")).toEqual(['text']);
+    expect(kinds("weather' fine")).toContain('weather');
+  });
+
+  it('M2: a backslash after a colon or a slash is kept', () => {
+    expect(displayText('C:\\bus')).toBe('C:\\bus');
+    expect(displayText('a/\\weather')).toBe('a/\\weather');
+    expect(displayText('see \\bus')).toBe('see bus');
+  });
+});

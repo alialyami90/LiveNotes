@@ -71,7 +71,10 @@ describe('phrase chips', () => {
 
   it('"transit to @Porto" carries a Directions link that does not open the editor', async () => {
     const { user, container } = setup(build([['a', 'Trip from @Lisbon', [['b', 'transit to @Porto']]]], PLACES));
-    const link = await within(rich(container, 'b')).findByRole('link', { name: 'Directions ↗' });
+    const link = await within(rich(container, 'b')).findByRole('link', {
+      name: 'Public transport directions in Google Maps (opens in a new tab)',
+    });
+    expect(link).toHaveTextContent('Directions ↗');
     expect(link).toHaveClass('chip-link');
     expect(link.getAttribute('href')).toContain('travelmode=transit');
     expect(link.getAttribute('href')).toContain('origin=38.72,-9.14');

@@ -291,7 +291,11 @@ describe('legend', () => {
     const { open } = setup();
     open(doc('alpha', 'Trip'));
     await screen.findByText('alpha');
-    expect(document.querySelector('main[data-screen="note"] footer.legend')).not.toBeNull();
+    const legend = document.querySelector('main[data-screen="note"] footer.legend');
+    expect(legend).not.toBeNull();
+    // M6: it teaches the plain-word phrases too.
+    expect(legend?.textContent).toMatch(/weather/);
+    expect(legend?.textContent).toMatch(/drive to @Place/);
   });
 });
 

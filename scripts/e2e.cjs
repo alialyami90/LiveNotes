@@ -505,6 +505,27 @@ async function phraseFlow(page, ctx) {
     return `${a.join(' ')} | ${m.join(' ')}`;
   });
   await back(page);
+
+  await check('phrases: "forecast" with no place stays a plain word; a chained "fly to" starts from the leg before', async () => {
+    await newNote(page, 'Plain words');
+    await typeSlow(page, 'Q4 sales forecast review');
+    await press(page, 'Enter');
+    await typeSlow(page, '@Lisbon ');
+    await press(page, 'Enter');
+    await typeSlow(page, 'fly to @Porto then fly to @Lisbon ');
+    await press(page, 'Escape');
+    const q4 = richRow(page, /^Q4 sales/);
+    const t = await q4.textContent();
+    const tip = await q4.locator('span[title]').getAttribute('title');
+    assert(t === 'Q4 sales forecast review' && (await q4.locator('.chip').count()) === 0, `Q4 row: ${t}`);
+    assert(tip === 'No place here for a forecast', `tooltip: ${tip}`);
+    const legs = richRow(page, /^fly to/).locator('.chip-formula.kind-travel');
+    await legs.nth(1).waitFor({ timeout: 6000 });
+    const titles = [await legs.nth(0).getAttribute('title'), await legs.nth(1).getAttribute('title')];
+    assert(titles[0] === '{travel("fly", prev, @[porto])}' && titles[1] === '{travel("fly", @[porto], @[lisbon])}', titles.join(' | '));
+    return titles.join(' | ');
+  });
+  await back(page);
 }
 
 (async () => {
@@ -531,6 +552,29 @@ async function phraseFlow(page, ctx) {
     const total = await page.locator('.chip-place').count();
     assert(missing === 0, `${missing}/${total} unresolved`);
     return `${total} chips`;
+  });
+  await check('sample: place chips show their kind icon (🏙️ city, 🍽️ restaurant, 🛍️ shop), none 📍', async () => {
+    const icon = (name) => page.locator('.chip-place', { hasText: name }).first().getAttribute('data-icon');
+    const got = [await icon('Lisbon'), await icon('Time Out Market'), await icon('Livraria Lello'), await icon('Pinhão')];
+    assert(got.join(' ') === '🏙️ 🍽️ 🛍️ 🏘️', got.join(' '));
+    const pins = await page.locator('.chip-place[data-icon="📍"]').count();
+    assert(pins === 0, `${pins} chips still show 📍`);
+    return got.join(' ');
+  });
+  await check('sample: "How this works" teaches the phrases as plain words', async () => {
+    const how = rowText(page, 'How this works');
+    const t = await how.textContent();
+    assert(t.includes('plain words like weather or drive to @Place'), t);
+    assert((await how.locator('.chip-formula').count()) === 0, 'the phrases there became chips');
+  });
+  await check('sample: the travel chip sits a spacing step after its destination chip', async () => {
+    const row = rowText(page, 'drive from');
+    await row.locator('.chip-formula.kind-travel').waitFor();
+    const porto = await row.locator('.chip-place', { hasText: 'Porto' }).boundingBox();
+    const chip = await row.locator('.chip-formula.kind-travel').boundingBox();
+    const gap = chip.x - (porto.x + porto.width);
+    assert(gap >= 4 && gap <= 8 && Math.abs(chip.y - porto.y) < 4, `gap ${gap.toFixed(1)} px`);
+    return `${gap.toFixed(1)} px`;
   });
   await check('sample: formulas (weather, route, distance) render values', async () => {
     const t = await page.locator('.chip-formula').allTextContents();
