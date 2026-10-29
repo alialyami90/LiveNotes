@@ -1,11 +1,15 @@
 /**
  * Notes made at launch: the first-launch note (the old single document, else the sample) and
  * the adoption of a legacy document an earlier launch could not finish migrating.
+ *
+ * The note made from the legacy document carries `legacy: true` in the index. That marker,
+ * not its content, ties the note to `livenotes:doc:v1`: the note may have been edited since,
+ * and once it is deleted the legacy key must go with it, or the next launch would bring it back.
  */
 import { isDoc } from '../model/storage';
 import type { Doc } from '../model/types';
 import { LEGACY_KEY, noteKey, parse } from './records';
-import type { NoteMeta, NoteSummary } from './types';
+import type { NoteMeta } from './types';
 
 export interface LegacyContext {
   /** Raw storage writes; these throw on quota or blocked storage. */
@@ -21,7 +25,6 @@ export interface LegacyContext {
   newMeta(doc: Doc): NoteMeta;
   writeIndex(next: NoteMeta[]): void;
   discardOrphan(id: string): void;
-  summarize(doc: Doc): NoteSummary;
   sample(): Doc;
 }
 
@@ -30,13 +33,17 @@ export interface Legacy {
   migrate(): void;
   /** A launch with an index: a legacy document still present must end up as a note. */
   adopt(): void;
-  /** After each index write: once the legacy note is stored and listed, the legacy key goes. */
+  /** After each index write: once the adopted note is stored and listed, the legacy key goes. */
   finish(): void;
+  /** After metas are dropped, or would have been (a failed purge): an adopted one retires the key. */
+  dropped(gone: NoteMeta[]): void;
 }
 
 export function createLegacy(ctx: LegacyContext): Legacy {
-  /** The note made from the legacy doc, until it is stored; then the legacy key can go. */
-  let legacyNoteId: string | null = null;
+  /** The legacy key still holds the only stored copy of the adopted note. */
+  let open = false;
+  /** Its note was deleted this launch: never adopt the key again, even if removing it failed. */
+  let retired = false;
 
   const removeLegacy = () => {
     try {
@@ -54,8 +61,8 @@ export function createLegacy(ctx: LegacyContext): Legacy {
 
   /** Note key, then index (whose write calls finish(), removing the legacy key). A failure holds it in memory. */
   function storeAtLaunch(doc: Doc, fromLegacy: boolean) {
-    const meta = ctx.newMeta(doc);
-    if (fromLegacy) legacyNoteId = meta.id;
+    const meta: NoteMeta = { ...ctx.newMeta(doc), ...(fromLegacy ? { legacy: true as const } : {}) };
+    if (fromLegacy) open = true;
     try {
       ctx.setItem(noteKey(meta.id), JSON.stringify(doc));
       ctx.writeIndex([...ctx.metas(), meta]);
@@ -68,17 +75,6 @@ export function createLegacy(ctx: LegacyContext): Legacy {
     }
   }
 
-  const storedJson = (id: string): string | null => {
-    const raw = ctx.get(noteKey(id));
-    return raw === null ? null : JSON.stringify(parse(raw));
-  };
-
-  function finish() {
-    if (legacyNoteId === null || ctx.pending.has(legacyNoteId) || !ctx.metas().some((m) => m.id === legacyNoteId)) return;
-    legacyNoteId = null;
-    removeLegacy();
-  }
-
   return {
     migrate() {
       const legacyDoc = readLegacy();
@@ -87,25 +83,38 @@ export function createLegacy(ctx: LegacyContext): Legacy {
     },
 
     adopt() {
-      const legacy = readLegacy();
-      if (!legacy) return;
-      const json = JSON.stringify(legacy);
-      if (ctx.metas().some((m) => storedJson(m.id) === json)) return removeLegacy();
-      // Listed but its key never written: the migrated note itself, so restore it under its id.
-      const want = ctx.summarize(legacy).searchText;
-      const lost = ctx.metas().find((m) => ctx.get(noteKey(m.id)) === null && m.summary.searchText === want);
-      if (!lost) return storeAtLaunch(legacy, true);
-      legacyNoteId = lost.id;
+      if (retired) return;
+      const doc = readLegacy();
+      if (!doc) return;
+      const adopted = ctx.metas().find((m) => m.legacy);
+      if (!adopted) return storeAtLaunch(doc, true);
+      // Its note key exists: the note holds the data (perhaps edited since), so the key is stale.
+      if (ctx.get(noteKey(adopted.id)) !== null) return removeLegacy();
+      // Listed but never stored (a failed write, then a later index write): restore it in place.
       try {
-        ctx.setItem(noteKey(lost.id), json);
+        ctx.setItem(noteKey(adopted.id), JSON.stringify(doc));
       } catch (e) {
         console.warn('LiveNotes: could not restore the migrated note', e);
-        ctx.pending.set(lost.id, legacy);
+        ctx.pending.set(adopted.id, doc);
+        open = true;
         return;
       }
-      finish();
+      removeLegacy();
     },
 
-    finish,
+    finish() {
+      if (!open) return;
+      const adopted = ctx.metas().find((m) => m.legacy);
+      if (!adopted || ctx.pending.has(adopted.id)) return;
+      open = false;
+      removeLegacy();
+    },
+
+    dropped(gone) {
+      if (!gone.some((m) => m.legacy)) return;
+      open = false;
+      retired = true;
+      removeLegacy();
+    },
   };
 }

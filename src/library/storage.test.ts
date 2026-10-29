@@ -62,6 +62,8 @@ describe('migration and first launch', () => {
     expect(lib.read(meta.id)).toEqual(legacy);
     expect(meta.createdAt).toBe(1_000_000);
     expect(meta.updatedAt).toBe(1_000_000);
+    expect(meta.legacy).toBe(true); // written in the same index write
+    expect(JSON.parse(store.m.get(INDEX_KEY)!).notes[0].legacy).toBe(true);
     expect(store.m.has(LEGACY_KEY)).toBe(false);
     expect(store.m.has(INDEX_KEY)).toBe(true);
   });
@@ -178,6 +180,69 @@ describe('migration and first launch', () => {
     expect(next.read(id)?.title).toBe('Old note, edited');
   });
 
+  /** Full storage: a note key that doesn't exist yet can't be written (a whole new doc won't fit). */
+  const noRoomForNewNotes = (store: ReturnType<typeof memStore>) => {
+    const set = store.setItem;
+    store.setItem = (k, v) => {
+      if (k.startsWith('livenotes:note:') && !store.m.has(k)) throw new Error('quota');
+      set(k, v);
+    };
+    return () => (store.setItem = set);
+  };
+
+  it('a legacy note adopted only in memory and then deleted stays deleted', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { lib: first, store } = setup();
+    first.create(doc('Existing'));
+    store.m.set(LEGACY_KEY, JSON.stringify(doc('Left behind')));
+    const healthy = noRoomForNewNotes(store);
+    const lib = createLibrary(store, { now: () => 1_000_000, today: () => '2026-10-29', newId: () => 'adopted' });
+    const adopted = lib.list().find((m) => m.summary.title === 'Left behind')!;
+    expect(lib.read(adopted.id)?.title).toBe('Left behind');
+    expect(store.m.has(noteKey(adopted.id))).toBe(false); // held in memory only
+    lib.remove(adopted.id);
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    healthy();
+    const next = setup(store).lib;
+    expect(next.list().map((m) => m.summary.title)).not.toContain('Left behind');
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+  });
+
+  it('a soft-deleted legacy note purged at the next launch (app killed in the undo window) stays deleted', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { lib: first, store } = setup();
+    first.create(doc('Existing'));
+    store.m.set(LEGACY_KEY, JSON.stringify(doc('Left behind')));
+    const healthy = noRoomForNewNotes(store);
+    const lib = createLibrary(store, { now: () => 1_000_000, today: () => '2026-10-29', newId: () => 'adopted' });
+    const adopted = lib.list().find((m) => m.summary.title === 'Left behind')!;
+    lib.softDelete(adopted.id); // the index now lists it, deleted; the app is killed here
+    healthy();
+    const next = setup(store, { now: 1_007_000 }).lib;
+    expect(next.list().map((m) => m.summary.title)).not.toContain('Left behind');
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+    expect(setup(store, { now: 1_008_000 }).lib.list().map((m) => m.summary.title)).not.toContain('Left behind');
+  });
+
+  it('a finished migration whose legacy key could not be removed adds no duplicate after edits', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = memStore({ [LEGACY_KEY]: JSON.stringify(doc('Old note')) });
+    const remove = store.removeItem;
+    store.removeItem = (k) => {
+      if (k === LEGACY_KEY) throw new Error('blocked');
+      remove(k);
+    };
+    const { lib } = setup(store);
+    expect(store.m.has(LEGACY_KEY)).toBe(true);
+    const id = lib.list()[0].id;
+    lib.save(id, doc('Old note, edited'));
+    store.removeItem = remove;
+    const next = setup(store).lib;
+    expect(next.list()).toHaveLength(1);
+    expect(next.read(id)?.title).toBe('Old note, edited');
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+  });
+
   it('survives every write failing at construction (first launch)', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const store = memStore();
@@ -194,6 +259,7 @@ describe('migration and first launch', () => {
     expect(lib.list()).toHaveLength(1);
     const [meta] = lib.list();
     expect(meta.summary.title).toBe('Portugal road trip (sample)');
+    expect(meta.legacy).toBeUndefined();
     expect(lib.read(meta.id)?.title).toBe('Portugal road trip (sample)');
     expect(store.m.has(noteKey(meta.id))).toBe(true);
     // Reconstructing does not seed a second sample.

@@ -26,6 +26,8 @@ export interface NoteMeta {
   archived?: boolean;
   /** Epoch ms; a deleted note is kept only until it is purged. */
   deletedAt?: number;
+  /** Made from the pre-library document (livenotes:doc:v1): deleting it retires that key too. */
+  legacy?: true;
   /** Recomputed on every save, so home never parses every note. */
   summary: NoteSummary;
 }

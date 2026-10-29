@@ -143,7 +143,6 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
     newMeta: (doc) => metaFor(newId(), doc, now()),
     writeIndex,
     discardOrphan,
-    summarize,
     sample: () => sampleNote(today()),
   });
 
@@ -160,10 +159,15 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
     return meta;
   };
 
-  /** Index goes first: a failure then leaves an orphan note key, never a meta without a note. */
+  /**
+   * Index goes first: a failure then leaves an orphan note key, never a meta without a note.
+   * The legacy key goes before the note keys, so a failed key removal can't revive the note.
+   */
   const drop = (ids: string[]) => {
     sync();
+    const gone = metas.filter((m) => ids.includes(m.id));
     writeIndex(metas.filter((m) => !ids.includes(m.id)));
+    legacy.dropped(gone);
     for (const id of ids) {
       pending.delete(id);
       storage.removeItem(noteKey(id));
@@ -172,13 +176,15 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
 
   function purgeStale() {
     const t = now();
-    const stale = metas.filter((m) => m.deletedAt !== undefined && t - m.deletedAt > UNDO_WINDOW_MS).map((m) => m.id);
+    const staleMetas = metas.filter((m) => m.deletedAt !== undefined && t - m.deletedAt > UNDO_WINDOW_MS);
+    const stale = staleMetas.map((m) => m.id);
     if (stale.length === 0) return;
     try {
       drop(stale);
     } catch (e) {
       console.warn('LiveNotes: could not purge deleted notes', e);
       metas = metas.filter((m) => !stale.includes(m.id)); // retried on the next launch
+      legacy.dropped(staleMetas); // deleted is deleted: its legacy doc must not be adopted again
     }
   }
 
