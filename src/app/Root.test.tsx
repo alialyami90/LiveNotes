@@ -147,6 +147,19 @@ describe('Root', () => {
     expect(meta.updatedAt).toBe(1000);
   });
 
+  it('a meta with a malformed summary does not crash Home', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    const idx = JSON.parse(storage.getItem(INDEX_KEY)!);
+    const meta = idx.notes.find((m: { id: string }) => m.id === 'A');
+    delete meta.summary.placeNames;
+    delete meta.summary.places;
+    storage.setItem(INDEX_KEY, JSON.stringify(idx));
+    setup(storage);
+    expect(home()).not.toBeNull();
+    expect(titles()).toContain('Trip');
+  });
+
   it('an unknown note id goes home', async () => {
     history.replaceState(null, '', '#/note/nope');
     setup();

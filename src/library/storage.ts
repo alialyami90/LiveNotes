@@ -86,8 +86,15 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
    * Another tab may have written the index since we last read it; every mutation
    * starts from the stored copy so it never clobbers that tab's metas.
    */
+  /** A meta whose summary is malformed is recomputed from its note; with no readable note it is left out. */
+  const repair = (m: NoteMeta): NoteMeta | null => {
+    const doc = pending.get(m.id) ?? parse(get(noteKey(m.id)));
+    return isDoc(doc) ? { ...m, summary: summarize(doc) } : null;
+  };
+  const readIndex = (raw: string | null) => validIndex(parse(raw), repair);
+
   const sync = () => {
-    const stored = validIndex(parse(get(INDEX_KEY)));
+    const stored = readIndex(get(INDEX_KEY));
     if (!stored) return;
     // A note held in memory is in no stored index yet; keep it, so the next index write stores it.
     const held = metas.filter((m) => pending.has(m.id) && !stored.some((s) => s.id === m.id));
@@ -150,7 +157,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
   function loadMetas(): NoteMeta[] | null {
     const raw = get(INDEX_KEY);
     if (raw === null) return null;
-    const valid = validIndex(parse(raw));
+    const valid = readIndex(raw);
     if (valid) return valid;
     const rebuilt = scanNotes();
     if (!rebuilt || rebuilt.length === 0) return null;

@@ -236,6 +236,50 @@ describe('index validation and rebuild', () => {
     expect(setup(store).lib.list().some((m) => m.id === id)).toBe(true);
   });
 
+  it.each([
+    ['no placeNames', (sm: Record<string, unknown>) => delete sm.placeNames],
+    ['places not an array', (sm: Record<string, unknown>) => (sm.places = 'Lisbon')],
+    ['a place without coordinates', (sm: Record<string, unknown>) => (sm.places = [{ name: 'Lisbon' }])],
+    ['a non-string title', (sm: Record<string, unknown>) => (sm.title = 7)],
+    ['a non-string preview', (sm: Record<string, unknown>) => delete sm.preview],
+    ['a non-string searchText', (sm: Record<string, unknown>) => (sm.searchText = null)],
+    ['a non-string from', (sm: Record<string, unknown>) => (sm.from = 20261103)],
+    ['a non-string placeName', (sm: Record<string, unknown>) => (sm.placeNames = [1])],
+  ])('recomputes a summary with %s from its note, keeping the meta and the other notes', (_n, spoil) => {
+    const { lib: a, store } = setup();
+    const id = a.create(doc('Kept', 'Visit @Lisbon')).id;
+    a.setPinned(id, true);
+    const idx = JSON.parse(store.m.get(INDEX_KEY)!);
+    const target = idx.notes.find((m: { id: string }) => m.id === id);
+    spoil(target.summary);
+    store.m.set(INDEX_KEY, JSON.stringify(idx));
+    const { lib } = setup(store, { now: 9_000_000 });
+    const meta = lib.list().find((m) => m.id === id)!;
+    expect(meta.summary.title).toBe('Kept');
+    expect(meta.summary.placeNames).toEqual(['Lisbon']);
+    expect(Array.isArray(meta.summary.places)).toBe(true);
+    expect(typeof meta.summary.preview).toBe('string');
+    expect(typeof meta.summary.searchText).toBe('string');
+    expect(meta.summary.places.every((p) => typeof p.lat === 'number' && typeof p.lon === 'number')).toBe(true);
+    expect(meta.summary.from === undefined || typeof meta.summary.from === 'string').toBe(true);
+    expect(meta.pinned).toBe(true);
+    expect(meta.updatedAt).toBe(1_000_000); // repaired, not rebuilt
+    expect(lib.list()).toHaveLength(2);
+  });
+
+  it('drops a malformed meta whose note is unreadable from the list, but keeps its note key', () => {
+    const { lib: a, store } = setup();
+    const id = a.create(doc('Lost summary')).id;
+    const idx = JSON.parse(store.m.get(INDEX_KEY)!);
+    delete idx.notes.find((m: { id: string }) => m.id === id).summary.placeNames;
+    store.m.set(INDEX_KEY, JSON.stringify(idx));
+    store.m.set(noteKey(id), '{unreadable');
+    const { lib } = setup(store);
+    expect(lib.list().map((m) => m.id)).not.toContain(id);
+    expect(lib.list()).toHaveLength(1);
+    expect(store.m.get(noteKey(id))).toBe('{unreadable');
+  });
+
   it('treats a corrupt index as missing when storage cannot enumerate keys', () => {
     const store = memStore({ [INDEX_KEY]: 'nope' });
     const bare = { getItem: store.getItem, setItem: store.setItem, removeItem: store.removeItem };
