@@ -40,8 +40,9 @@
   line-height: 22px;
 }
 .chip-place { background: var(--place-bg); color: var(--place-ink); }
-/* U+2060 (word joiner): an emoji is a line-break opportunity, so a narrow table cell split the pin from the name. */
-.chip-place::before { content: '📍\2060'; font-size: 0.8em; margin-right: 3px; }
+/* The kind's icon (📍 when unknown). U+2060 (word joiner): an emoji is a line-break
+   opportunity, so a narrow table cell split the icon from the name. */
+.chip-place::before { content: attr(data-icon) '\2060'; font-size: 0.8em; margin-right: 3px; }
 .chip-place.is-pending { outline: 1px dashed currentColor; outline-offset: -1px; }
 .chip-place.is-error { outline: 1px dashed var(--error-ink); outline-offset: -1px; }
 .chip-place.is-error::after { content: ' ⟳'; font-size: 0.85em; }
@@ -56,3 +57,15 @@
 }
 .chip-formula.is-pending { border-style: dashed; border-color: currentColor; }
 .chip-formula.is-error { background: var(--error-bg); color: var(--error-ink); }
+
+/* Transit's "Directions ↗" (R11): a plain link inside the travel chip, in the chip's ink. */
+.chip-link {
+  position: relative;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+@media (pointer: coarse) {
+  /* 44px touch target around the link without changing the chip's line box */
+  .chip-link::before { content: ''; position: absolute; top: calc(50% - 22px); left: -4px; right: -4px; height: 44px; }
+}

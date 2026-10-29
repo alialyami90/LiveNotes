@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import type { NodeId } from '../../model/types';
+import { placeIcon } from '../../services/kinds';
 import { useStore } from '../store';
 import { setHovered, useHovered } from '../hover';
 import { collectPlaces, unresolvedPlaces } from './collect';
@@ -62,7 +63,8 @@ export default function MapView({ id }: { id: NodeId }) {
       L.polyline(points, { color: '#c2410c', weight: 2.5, dashArray: '6 6', opacity: 0.8 }).addTo(group);
     }
     for (const s of stops) {
-      const marker = L.marker([s.place.lat, s.place.lon], { icon: markerIcon(s.index, false), title: s.place.label ?? s.place.name })
+      const title = `${placeIcon(s.place)} ${s.place.label ?? s.place.name}`;
+      const marker = L.marker([s.place.lat, s.place.lon], { icon: markerIcon(s.index, false), title })
         .on('mouseover', () => setHovered(s.nodeId))
         .on('mouseout', () => setHovered(null))
         .on('click', () => setFocus({ id: s.nodeId, caret: textOf.current(s.nodeId).length }))

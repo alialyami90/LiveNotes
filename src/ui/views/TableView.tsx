@@ -1,7 +1,9 @@
+import { Fragment } from 'react';
 import type { NodeId } from '../../model/types';
 import { tokenize } from '../../syntax/tokenize';
 import { parse } from '../../formula/parser';
 import { formatDate } from '../../formula/format';
+import { phraseSource } from '../../formula/travel';
 import { useStore } from '../store';
 import { setHovered, useHovered } from '../hover';
 import { FormulaChip } from '../Chips';
@@ -9,6 +11,10 @@ import { RichText } from '../RichText';
 
 const formulasOf = (text: string) =>
   tokenize(text).flatMap((s) => (s.kind === 'formula' ? [s.source] : []));
+
+/** A row's route phrases as formula sources; they move out of the Item cell into Travel (R5). */
+const routesOf = (text: string) =>
+  tokenize(text).flatMap((s) => (s.kind === 'route' ? [phraseSource(s)] : []));
 
 /** Column header: the function a column's first formula calls, else a generic label. */
 function header(sources: (string | undefined)[], index: number): string {
@@ -29,6 +35,8 @@ export function TableView({ id }: { id: NodeId }) {
 
   const formulas = rows.map((r) => formulasOf(doc.nodes[r].text));
   const columns = Math.max(0, ...formulas.map((f) => f.length));
+  const routes = rows.map((r) => routesOf(doc.nodes[r].text));
+  const hasTravel = routes.some((t) => t.length > 0);
 
   return (
     <div className="table-view">
@@ -38,6 +46,7 @@ export function TableView({ id }: { id: NodeId }) {
             <th>Item</th>
             <th className="col-place">Place</th>
             <th>Date</th>
+            {hasTravel && <th>Travel</th>}
             {Array.from({ length: columns }, (_, c) => (
               <th key={c}>{header(formulas.map((f) => f[c]), c)}</th>
             ))}
@@ -61,6 +70,16 @@ export function TableView({ id }: { id: NodeId }) {
                 </td>
                 <td className="col-place">{place ? place.name : ''}</td>
                 <td>{date ? formatDate(date) : ''}</td>
+                {hasTravel && (
+                  <td>
+                    {routes[r].map((src, k) => (
+                      <Fragment key={k}>
+                        {k > 0 && ' '}
+                        <FormulaChip nodeId={rowId} source={src} />
+                      </Fragment>
+                    ))}
+                  </td>
+                )}
                 {Array.from({ length: columns }, (_, c) => (
                   <td key={c}>{formulas[r][c] !== undefined && <FormulaChip nodeId={rowId} source={formulas[r][c]} />}</td>
                 ))}

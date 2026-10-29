@@ -60,10 +60,12 @@ export function sampleDoc(today = new Date()): Doc {
           ],
         },
         {
-          text: `${d(6)} — drive to @Porto {route(@Lisbon, here)}`,
+          // The phrase is the route (a {route()} too would show it twice). It names its start
+          // because the previous day mentions no place, so `prev` would be empty.
+          text: `${d(6)} — drive from @Lisbon to @Porto`,
           children: [
             { text: 'Lunch stop in @Coimbra? {distance(@Lisbon, @Coimbra)} from Lisbon' },
-            { text: 'Forecast in Porto: {weather()}' },
+            { text: 'Porto weather' },
           ],
         },
         {

@@ -191,5 +191,44 @@ describe('TableView', () => {
     expect(t.getByText('6')).toBeInTheDocument();
     expect(t.getByText('Wed, Nov 4')).toBeInTheDocument();
     expect(table.querySelectorAll('th')).toHaveLength(4);
+    expect(within(table).queryByText('Travel')).toBeNull();
+  });
+
+  it('adds a Travel column after Date when a row has a route; Item keeps weather but not the route', async () => {
+    const { container } = setup(
+      build(
+        [['trip', 'Nov 4 trip from @Lisbon', [['x', 'Nov 5 drive to @Porto {1 + 1}'], ['y', 'Pack for the weather']], 'table']],
+        { lisbon: LISBON, porto: PORTO },
+      ),
+    );
+    const table = container.querySelector<HTMLElement>('[data-view="table"] table')!;
+    const heads = [...table.querySelectorAll('th')].map((th) => th.textContent);
+    expect(heads).toEqual(['Item', 'Place', 'Date', 'Travel', 'ƒ1']);
+    const [x, y] = [...table.querySelectorAll('tbody tr')];
+    const cells = (tr: Element) => [...tr.querySelectorAll('td')];
+    await waitFor(() => expect(cells(x)[3]).toHaveTextContent('🚗 1h 00m · 100 km'));
+    expect(cells(x)[0].querySelector('.chip-formula')).toBeNull();
+    expect(cells(x)[0]).toHaveTextContent('drive to Porto');
+    expect(cells(x)[4]).toHaveTextContent('2');
+    expect(cells(y)[3]).toBeEmptyDOMElement();
+    await waitFor(() => expect(cells(y)[0].querySelector('.chip-formula')).toHaveTextContent('☀️ 20° / 10°'));
+  });
+});
+
+describe('MapView', () => {
+  it('marker titles start with the place-kind icon', async () => {
+    const { default: MapView } = await import('./MapView');
+    const doc = build([['trip', 'Coffee at @Cafe then @Porto']], {
+      cafe: { name: 'Café', label: 'Café, Porto', lat: 41.14, lon: -8.6, kind: 'cafe' },
+      porto: PORTO,
+    });
+    const { container } = render(
+      <DocProvider initialDoc={doc} services={services} storage={null} today={TODAY}>
+        <MapView id="trip" />
+      </DocProvider>,
+    );
+    await waitFor(() => expect(container.querySelectorAll('.leaflet-marker-icon')).toHaveLength(2));
+    const titles = [...container.querySelectorAll('.leaflet-marker-icon')].map((m) => m.getAttribute('title'));
+    expect(titles).toEqual(['☕ Café, Porto', '📍 Porto']);
   });
 });

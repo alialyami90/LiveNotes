@@ -80,10 +80,15 @@ describe('Outline', () => {
     await waitFor(() => expect(chip).toHaveAttribute('title', 'Lisboa'));
   });
 
-  it('phrase words still read in the read view until they get chips', () => {
+  it('phrase words become chips; escaped ones and mode words read as written', () => {
     const { container } = setup(build([['a', 'Forecast in @Lisbon'], ['b', '\\weather and drive to @Porto']]));
-    expect(container.querySelector('li[data-node-id="a"] .rich')?.textContent).toMatch(/^Forecast in /);
-    expect(container.querySelector('li[data-node-id="b"] .rich')?.textContent).toMatch(/^weather and drive to /);
+    const a = container.querySelector<HTMLElement>('li[data-node-id="a"] .rich')!;
+    // No date here, so the chip may settle as an error; either way it stands where the word was.
+    expect(a.textContent).not.toMatch(/Forecast/);
+    expect(a.querySelector('[title^="{weather()}"]')).toHaveClass('chip-formula');
+    const b = container.querySelector<HTMLElement>('li[data-node-id="b"] .rich')!;
+    expect(b.textContent).toMatch(/^weather and drive to Porto/);
+    expect(b.querySelector('[title^=\'{travel("drive", prev, @[porto])}\']')).toHaveClass('chip-formula');
   });
 
   it('an unknown place renders a missing chip', async () => {

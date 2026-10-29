@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { createPortal } from 'react-dom';
 import type { NodeId } from '../model/types';
 import { formatValue } from '../formula/format';
+import { placeIcon } from '../services/kinds';
 import { useStore } from './store';
 import { useFormula } from './useFormula';
 
@@ -23,7 +24,7 @@ export function PlaceChip({ placeKey, name }: { placeKey: string; name: string }
     retryPlace(placeKey);
   };
   return (
-    <span className={`chip chip-place ${status}`} title={title} onClick={onClick}>
+    <span className={`chip chip-place ${status}`} data-icon={placeIcon(place)} title={title} onClick={onClick}>
       {name}
     </span>
   );
@@ -141,6 +142,26 @@ export function FormulaChip({ nodeId, source }: { nodeId: NodeId; source: string
   }
   const { value } = state;
   if (value.kind === 'error') return <ErrorChip source={source} message={value.message} text={formatValue(value)} />;
+  if (value.kind === 'travel' && value.directionsUrl) {
+    // R11: a plain link; Capacitor hands other hosts to the system browser. Its click must
+    // not open the row editor, and on touch its own ::before widens it to 44px (chips.css).
+    return (
+      <span className="chip-wrap">
+        <span className="chip chip-formula kind-travel" title={`{${source}}`}>
+          {formatValue(value)} ·{' '}
+          <a
+            className="chip-link"
+            href={value.directionsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Directions ↗
+          </a>
+        </span>
+      </span>
+    );
+  }
   return (
     <span className={`chip chip-formula kind-${value.kind}`} title={`{${source}}`}>
       {formatValue(value)}

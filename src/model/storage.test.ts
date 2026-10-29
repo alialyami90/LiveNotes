@@ -62,6 +62,23 @@ describe('storage', () => {
     for (const key of keys) expect(d.places[key], key).toBeDefined();
   });
 
+  it('sampleDoc shows each fact once: no row has both a phrase and the formula it stands for', () => {
+    for (const n of Object.values(sampleDoc().nodes)) {
+      const segs = tokenize(n.text);
+      const formulas = segs.flatMap((s) => (s.kind === 'formula' ? [s.source] : []));
+      if (segs.some((s) => s.kind === 'weather')) expect(formulas.join(' '), n.text).not.toMatch(/weather\(/);
+      if (segs.some((s) => s.kind === 'route')) expect(formulas.join(' '), n.text).not.toMatch(/route\(|travel\(/);
+    }
+  });
+
+  it('sampleDoc demonstrates weather, route and distance formulas and the weather and route phrases', () => {
+    const segs = Object.values(sampleDoc().nodes).flatMap((n) => tokenize(n.text));
+    const formulas = segs.flatMap((s) => (s.kind === 'formula' ? [s.source] : [])).join(' ');
+    for (const f of ['weather(', 'route(', 'distance(']) expect(formulas).toContain(f);
+    expect(segs.some((s) => s.kind === 'weather')).toBe(true);
+    expect(segs.some((s) => s.kind === 'route')).toBe(true);
+  });
+
   it('sampleDoc has a valid tree with nodes reachable from root', () => {
     const d = sampleDoc();
     expect(d.nodes[d.rootId].children.length).toBeGreaterThan(0);
