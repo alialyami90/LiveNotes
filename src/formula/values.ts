@@ -1,5 +1,6 @@
 import type { Place } from '../model/types';
 import type { ISODate } from '../context/resolve';
+import type { Mode } from '../syntax/phrases';
 
 export interface Weather {
   code: number;
@@ -26,6 +27,7 @@ export type Value =
   | { kind: 'speed'; mps: number }
   | ({ kind: 'weather' } & Weather)
   | ({ kind: 'route' } & Route)
+  | { kind: 'travel'; mode: Mode; meters: number; seconds?: number; estimated: boolean; directionsUrl?: string }
   | { kind: 'error'; message: string };
 
 export const err = (message: string): Value => ({ kind: 'error', message });

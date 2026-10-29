@@ -3,6 +3,8 @@ import { dayNumber, type ISODate } from '../context/resolve';
 import type { Services } from '../services/types';
 import { haversine } from '../services/geo';
 import type { Expr } from './parser';
+import { MODES } from '../syntax/phrases';
+import { travel } from './travel';
 import { err, type Value } from './values';
 
 export interface Env {
@@ -68,6 +70,10 @@ function arith(op: '+' | '-' | '*' | '/', l: Value, r: Value): Value {
 function prop(v: Value, name: string): Value {
   if (v.kind === 'route' && name === 'duration') return dur(v.seconds);
   if (v.kind === 'route' && name === 'distance') return dist(v.meters);
+  if (v.kind === 'travel' && name === 'distance') return dist(v.meters);
+  if (v.kind === 'travel' && name === 'duration') {
+    return v.seconds === undefined ? err(`no time for ${v.mode}`) : dur(v.seconds);
+  }
   if (v.kind === 'weather' && (name === 'high' || name === 'low')) return num(v[name]);
   if (v.kind === 'weather' && name === 'condition') return { kind: 'string', value: v.condition };
   if (v.kind === 'place' && name === 'name') return { kind: 'string', value: v.place.name };
@@ -104,6 +110,17 @@ async function call(name: string, args: Expr[], env: Env, services: Services): P
       if (b.kind !== 'place') return b;
       if (name === 'distance') return dist(haversine(a.place, b.place));
       return { kind: 'route', ...(await services.route(a.place, b.place)) };
+    }
+    case 'travel': {
+      if (vals.length !== 3) return err('travel(mode, from, to) needs a mode and two places');
+      const [m, a, b] = [want(vals[0], 'string', 'mode'), want(vals[1], 'place', 'from'), want(vals[2], 'place', 'to')];
+      if (m.kind !== 'string') return m;
+      if (a.kind !== 'place') return a;
+      if (b.kind !== 'place') return b;
+      // Canonical names only; synonyms like "car" belong to the prose phrases, not the formula.
+      const mode = MODES.find((x) => x.mode === m.value)?.mode;
+      if (!mode) return err(`unknown travel mode "${m.value}"`);
+      return travel(mode, a.place, b.place, services);
     }
     case 'days': {
       const [a, b] = [want(vals[0] ?? err('days(a, b) needs two dates'), 'date', 'a'), want(vals[1] ?? err('days(a, b) needs two dates'), 'date', 'b')];

@@ -1,4 +1,7 @@
+import { MODES, type Mode } from '../syntax/phrases';
 import type { Value } from './values';
+
+export const TRAVEL_ICON = Object.fromEntries(MODES.map((m) => [m.mode, m.icon])) as Record<Mode, string>;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -49,6 +52,11 @@ export function formatValue(v: Value): string {
       return `${v.icon} ${Math.round(v.high)}° / ${Math.round(v.low)}°`;
     case 'route':
       return `🚗 ${formatDuration(v.seconds)} · ${formatDistance(v.meters)}`;
+    case 'travel': {
+      // Transit has no time, and its "Directions ↗" link is added by the chip.
+      const time = v.seconds === undefined ? '' : `${v.estimated ? '≈ ' : ''}${formatDuration(v.seconds)} · `;
+      return `${TRAVEL_ICON[v.mode]} ${time}${formatDistance(v.meters)}`;
+    }
     case 'error':
       return `⚠ ${v.message}`;
   }

@@ -18,6 +18,11 @@ describe('formatValue', () => {
     [{ kind: 'place', place: { name: 'Lisbon', lat: 0, lon: 0 } }, 'Lisbon'],
     [{ kind: 'weather', code: 0, condition: 'Clear', icon: '☀️', high: 21.4, low: 13.6 }, '☀️ 21° / 14°'],
     [{ kind: 'route', seconds: 11100, meters: 313400 }, '🚗 3h 05m · 313 km'],
+    [{ kind: 'travel', mode: 'drive', meters: 313400, seconds: 11100, estimated: false }, '🚗 3h 05m · 313 km'],
+    [{ kind: 'travel', mode: 'walk', meters: 5800, seconds: 4200, estimated: true }, '🚶 ≈ 1h 10m · 5.8 km'],
+    [{ kind: 'travel', mode: 'bike', meters: 6100, seconds: 1500, estimated: true }, '🚲 ≈ 25 min · 6.1 km'],
+    [{ kind: 'travel', mode: 'transit', meters: 313400, estimated: false, directionsUrl: 'https://x' }, '🚆 313 km'],
+    [{ kind: 'travel', mode: 'fly', meters: 503000, estimated: false }, '✈ 503 km'],
     [{ kind: 'error', message: 'nope' }, '⚠ nope'],
   ] as const)('formats %j', (value, expected) => {
     expect(formatValue(value)).toBe(expected);
