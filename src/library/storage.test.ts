@@ -360,6 +360,46 @@ describe('reload', () => {
   });
 });
 
+describe('save options', () => {
+  it('touch: false recomputes the summary but keeps updatedAt', () => {
+    const { lib, t } = setup();
+    const { id } = lib.create(doc('Trip'));
+    t.now += 5000;
+    const meta = lib.save(id, doc('Trip renamed'), { touch: false });
+    expect(meta.updatedAt).toBe(1_000_000);
+    expect(meta.summary.title).toBe('Trip renamed');
+  });
+
+  it('writeDoc: false updates only the meta, leaving the note key alone', () => {
+    const { lib, store } = setup();
+    const { id } = lib.create(doc('Trip'));
+    const setItem = vi.spyOn(store, 'setItem');
+    lib.save(id, doc('Other'), { writeDoc: false });
+    expect(setItem.mock.calls.map(([k]) => k)).toEqual([INDEX_KEY]);
+    expect(lib.list().find((m) => m.id === id)?.summary.title).toBe('Other');
+    expect(lib.read(id)?.title).toBe('Trip');
+  });
+});
+
+describe('two tabs on one storage', () => {
+  it('a stale instance never clobbers metas another instance wrote', () => {
+    const store = memStore();
+    const a = setup(store).lib;
+    let n = 0;
+    const b = createLibrary(store, { now: () => 1, today: () => '2026-10-29', newId: () => `b${++n}` });
+    const fromA = a.create(doc('From A'));
+    a.setPinned(fromA.id, true);
+    const fromB = b.create(doc('From B')); // b has not reloaded since a's writes
+    b.save(fromB.id, doc('From B, edited'));
+    const fresh = () => createLibrary(store, { today: () => '2026-10-29' }).list();
+    expect(fresh().find((m) => m.id === fromA.id)?.pinned).toBe(true);
+    expect(fresh().map((m) => m.summary.title)).toEqual(expect.arrayContaining(['From A', 'From B, edited']));
+    b.remove(fromB.id);
+    expect(fresh().map((m) => m.id)).toContain(fromA.id);
+    expect(fresh().map((m) => m.id)).not.toContain(fromB.id);
+  });
+});
+
 describe('default newId', () => {
   it('produces distinct URL-hash-safe ids', () => {
     const lib = createLibrary(memStore(), {});

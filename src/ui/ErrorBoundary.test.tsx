@@ -40,20 +40,22 @@ describe('ErrorBoundary', () => {
     crash();
     await userEvent.click(screen.getByRole('button', { name: /download saved data/i }));
     await waitFor(() => expect(exportDocument).toHaveBeenCalled());
-    const [json, , name] = vi.mocked(exportDocument).mock.calls[0];
+    const [json, opts] = vi.mocked(exportDocument).mock.calls[0];
     expect(JSON.parse(json)).toEqual({
       'livenotes:index:v1': '{"version":1,"notes":[]}',
       'livenotes:note:A': '{"broken"',
     });
-    expect(name).toBe('livenotes-backup.json');
+    expect(opts?.name).toBe('livenotes-backup.json');
   });
 
   it('"Back to notes" goes home and reloads, leaving the library alone', async () => {
     localStorage.setItem('livenotes:note:A', 'keep');
     history.replaceState(null, '', '#/note/A');
     const reload = crash();
+    const before = history.length;
     await userEvent.click(screen.getByRole('button', { name: /back to notes/i }));
     expect(location.hash).toBe('#/');
+    expect(history.length).toBe(before); // the crashed screen is replaced, not left behind
     expect(reload).toHaveBeenCalled();
     expect(localStorage.getItem('livenotes:note:A')).toBe('keep');
   });

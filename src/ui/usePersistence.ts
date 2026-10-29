@@ -14,7 +14,8 @@ export function usePersistence(
   key: string,
   doc: Doc,
   onExternal: (doc: Doc) => void,
-  onSaved?: (doc: Doc) => void,
+  /** `previousRaw` is what the key held before this save, so callers can tell what kind of change it was. */
+  onSaved?: (doc: Doc, previousRaw: string | null) => void,
 ): void {
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -40,7 +41,8 @@ export function usePersistence(
     dirty.current = false;
     const current = docRef.current;
     const json = JSON.stringify(current);
-    if (json === lastWritten.current) return;
+    const previous = lastWritten.current ?? null;
+    if (json === previous) return;
     try {
       storage.setItem(key, json);
       lastWritten.current = json;
@@ -48,7 +50,7 @@ export function usePersistence(
       console.warn('LiveNotes: could not save', e);
       return;
     }
-    onSavedRef.current?.(current);
+    onSavedRef.current?.(current, previous);
   }, [storage, key]);
 
   useEffect(() => {

@@ -67,7 +67,7 @@ interface Props {
   /** Where this document lives; the legacy single-document key by default. */
   storageKey?: string;
   /** Called after each successful save, e.g. to refresh the library's summary of this note. */
-  onSaved?: (doc: Doc) => void;
+  onSaved?: (doc: Doc, previousRaw: string | null) => void;
   today?: ISODate;
   /** Backoff for places whose lookup failed because a service was unreachable; the last delay repeats. */
   retryDelaysMs?: number[];

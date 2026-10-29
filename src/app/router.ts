@@ -44,17 +44,24 @@ if (typeof window !== 'undefined') {
   window.addEventListener('hashchange', () => stamp(stampOf() ?? depth + 1));
 }
 
-export function navigate(to: string): void {
+/**
+ * `replace` swaps the current entry instead of pushing one: a redirect away from
+ * a bad note must not leave that note behind, or back would land on it and
+ * redirect again forever, and Android's back would never exit.
+ */
+export function navigate(to: string, { replace = false }: { replace?: boolean } = {}): void {
   if (location.hash === to) return;
   const from = depth;
-  location.hash = to;
-  stamp(from + 1);
+  if (replace) location.replace(to);
+  else location.hash = to;
+  stamp(replace ? from : from + 1);
 }
 
 /** Android's back gesture already walks history; the in-app arrow should do the same when it can. */
 export function goBack(): void {
-  if (depth > 0 && history.length > 1) history.back();
-  else navigate('#/');
+  if (depth > 0) history.back();
+  // Nothing in-app behind us (a deep link): home takes this entry's place, so back from home exits.
+  else navigate('#/', { replace: true });
 }
 
 const subscribe = (onChange: () => void) => {

@@ -22,13 +22,13 @@ function fakeDeps(native: boolean) {
 describe('exportDocument', () => {
   it('on Android writes livenotes.json to the cache and opens the share sheet', async () => {
     const { deps, calls } = fakeDeps(true);
-    await exportDocument('{"v":1}', deps);
+    await exportDocument('{"v":1}', { deps });
     expect(calls).toEqual(['write:livenotes.json:{"v":1}', 'share:file:///cache/livenotes.json:LiveNotes export']);
   });
 
   it('on the web downloads the file', async () => {
     const { deps, calls } = fakeDeps(false);
-    await exportDocument('{"v":1}', deps);
+    await exportDocument('{"v":1}', { deps });
     expect(calls).toEqual(['download:livenotes.json:{"v":1}']);
   });
 
@@ -37,6 +37,6 @@ describe('exportDocument', () => {
     deps.share = async () => {
       throw new Error('Share canceled');
     };
-    await expect(exportDocument('{}', deps)).resolves.toBeUndefined();
+    await expect(exportDocument('{}', { deps })).resolves.toBeUndefined();
   });
 });

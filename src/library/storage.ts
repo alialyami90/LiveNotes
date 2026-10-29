@@ -2,6 +2,7 @@ import { isoDate, type ISODate } from '../context/resolve';
 import { sampleDoc } from '../model/sample';
 import { isDoc, parseImport } from '../model/storage';
 import type { Doc } from '../model/types';
+import { emptyDoc, parse, validIndex } from './records';
 import { summarizeNote } from './summarize';
 import type { NoteMeta } from './types';
 
@@ -21,7 +22,7 @@ export interface Library {
   list(): NoteMeta[];
   read(id: string): Doc | null;
   create(doc?: Doc): NoteMeta;
-  save(id: string, doc: Doc): NoteMeta;
+  save(id: string, doc: Doc, opts?: SaveOptions): NoteMeta;
   setPinned(id: string, on: boolean): void;
   setArchived(id: string, on: boolean): void;
   softDelete(id: string): void;
@@ -30,6 +31,13 @@ export interface Library {
   remove(id: string): void;
   importDoc(json: string): NoteMeta | null;
   reload(): void;
+}
+
+export interface SaveOptions {
+  /** false: the change is not the user's (e.g. a place-cache write), so updatedAt stays. Default true. */
+  touch?: boolean;
+  /** false: the caller already wrote the note key; only the meta is updated. Default true. */
+  writeDoc?: boolean;
 }
 
 interface Options {
@@ -49,32 +57,6 @@ const defaultToday = (): ISODate => {
   return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
 };
 
-const emptyDoc = (): Doc => ({
-  version: 1,
-  rootId: 'root',
-  nodes: { root: { id: 'root', text: '', children: ['b1'] }, b1: { id: 'b1', text: '', children: [] } },
-  places: {},
-});
-
-function parse(raw: string | null): unknown {
-  if (raw === null) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-}
-
-/** A structurally bad index would crash home, so check what home reads. */
-function validIndex(v: unknown): NoteMeta[] | null {
-  const idx = v as { version?: unknown; notes?: unknown } | null | undefined;
-  if (!idx || idx.version !== 1 || !Array.isArray(idx.notes)) return null;
-  const ok = idx.notes.every((m: Partial<NoteMeta> | null) =>
-    !!m && typeof m.id === 'string' && typeof m.createdAt === 'number' && typeof m.updatedAt === 'number' &&
-    !!m.summary && typeof m.summary === 'object');
-  return ok ? (idx.notes as NoteMeta[]) : null;
-}
-
 export function createLibrary(storage: Store, opts: Options = {}): Library {
   const now = opts.now ?? Date.now;
   const today = opts.today ?? defaultToday;
@@ -93,6 +75,15 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
   };
   const summarize = (doc: Doc) => summarizeNote(doc, today());
   const metaFor = (id: string, doc: Doc, t: number): NoteMeta => ({ id, createdAt: t, updatedAt: t, summary: summarize(doc) });
+
+  /**
+   * Another tab may have written the index since we last read it; every mutation
+   * starts from the stored copy so it never clobbers that tab's metas.
+   */
+  const sync = () => {
+    const stored = validIndex(parse(get(INDEX_KEY)));
+    if (stored) metas = stored;
+  };
 
   /** Memory changes only after the write succeeds, so a failed write leaves state consistent. */
   const writeIndex = (next: NoteMeta[]) => {
@@ -167,6 +158,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
   };
 
   const add = (doc: Doc): NoteMeta => {
+    sync();
     const meta = metaFor(newId(), doc, now());
     storage.setItem(noteKey(meta.id), JSON.stringify(doc));
     try {
@@ -180,6 +172,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
 
   /** Index goes first: a failure then leaves an orphan note key, never a meta without a note. */
   const drop = (ids: string[]) => {
+    sync();
     writeIndex(metas.filter((m) => !ids.includes(m.id)));
     for (const id of ids) {
       pending.delete(id);
@@ -200,6 +193,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
   }
 
   const patch = (id: string, fn: (m: NoteMeta) => NoteMeta) => {
+    sync();
     if (!metas.some((m) => m.id === id)) return;
     writeIndex(metas.map((m) => (m.id === id ? fn(m) : m)));
   };
@@ -221,12 +215,17 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
       return isDoc(doc) ? doc : null;
     },
     create: (doc) => add(doc ?? emptyDoc()),
-    save(id, doc) {
+    save(id, doc, { touch = true, writeDoc = true } = {}) {
+      sync();
       const existing = metas.find((m) => m.id === id);
       const t = now();
       // A note purged by another tab while open is re-added rather than losing typed text.
-      const meta: NoteMeta = { ...(existing ?? { id, createdAt: t }), updatedAt: t, summary: summarize(doc) };
-      storage.setItem(noteKey(id), JSON.stringify(doc));
+      const meta: NoteMeta = {
+        ...(existing ?? { id, createdAt: t, updatedAt: t }),
+        ...(touch ? { updatedAt: t } : {}),
+        summary: summarize(doc),
+      };
+      if (writeDoc) storage.setItem(noteKey(id), JSON.stringify(doc));
       pending.delete(id);
       writeIndex(existing ? metas.map((m) => (m.id === id ? meta : m)) : [...metas, meta]);
       return meta;

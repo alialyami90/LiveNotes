@@ -41,14 +41,17 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private download = () => {
-    exportDocument(libraryBackup(), undefined, 'livenotes-backup.json').catch((e: unknown) =>
+    exportDocument(libraryBackup(), { name: 'livenotes-backup.json' }).catch((e: unknown) =>
       alert(`Backup failed: ${e instanceof Error ? e.message : String(e)}`),
     );
   };
 
-  /** The library is the user's notes, so recovery only leaves the screen that crashed. */
+  /**
+   * The library is the user's notes, so recovery only leaves the screen that crashed.
+   * Replacing the entry keeps back from returning to that screen.
+   */
   private backToNotes = () => {
-    location.hash = '#/';
+    location.replace('#/');
     (this.props.reload ?? (() => location.reload()))();
   };
 

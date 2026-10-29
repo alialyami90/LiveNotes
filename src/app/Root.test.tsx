@@ -24,9 +24,9 @@ const doc = (text: string, title?: string): Doc => ({
   places: {},
 });
 
-function setup(storage: Storage = memoryStorage(), strict = false) {
+function setup(storage: Storage = memoryStorage(), strict = false, svc: Services = services) {
   const user = userEvent.setup();
-  const tree = <Root storage={storage} services={services} today="2026-10-28" />;
+  const tree = <Root storage={storage} services={svc} today="2026-10-28" />;
   const utils = render(strict ? <StrictMode>{tree}</StrictMode> : tree);
   return { user, storage, ...utils };
 }
@@ -159,6 +159,77 @@ describe('Root', () => {
     history.replaceState(null, '', '#/note/A');
     setup(storage);
     await waitFor(() => expect(location.hash).toBe('#/'));
+  });
+
+  it('going back onto a bad note redirects in place, so back never loops', async () => {
+    history.pushState(null, '', '#/note/nope');
+    history.pushState(null, '', '#/archive');
+    setup();
+    const before = history.length;
+    const seen: string[] = [];
+    const record = () => seen.push(location.hash);
+    window.addEventListener('hashchange', record);
+    try {
+      act(() => history.back());
+      await waitFor(() => expect(seen).toEqual(['#/note/nope', '#/']));
+      expect(history.length).toBe(before);
+      // The bad entry is now home; going back again reaches the first entry, not the bad note.
+      const popped = new Promise((r) => window.addEventListener('popstate', r, { once: true }));
+      act(() => history.back());
+      await act(() => popped);
+      await act(() => new Promise((r) => setTimeout(r, 50)));
+      expect(location.hash).toBe('#/');
+      expect(seen.filter((h) => h === '#/note/nope')).toHaveLength(1);
+      expect(history.length).toBe(before);
+    } finally {
+      window.removeEventListener('hashchange', record);
+    }
+  });
+
+  it('a place-cache write refreshes the summary but keeps updatedAt', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A'], () => 1000).create(doc('Visit @Lisbon'));
+    history.replaceState(null, '', '#/note/A');
+    const geo: Services = {
+      ...services,
+      geocode: async (name) => (name === 'lisbon' ? { name: 'Lisboa', lat: 38.72, lon: -9.14 } : null),
+    };
+    setup(storage, false, geo);
+    await waitFor(() => expect(storage.getItem(noteKey('A'))).toContain('38.72'));
+    await goHome();
+    const meta = JSON.parse(storage.getItem(INDEX_KEY)!).notes.find((m: { id: string }) => m.id === 'A');
+    expect(meta.updatedAt).toBe(1000);
+    expect(meta.summary.places).toHaveLength(1);
+    expect(meta.summary.places[0].lat).toBe(38.72);
+  });
+
+  it('does not discard a new note whose last save failed', async () => {
+    const { user, container, storage } = setup();
+    const id = await createNote(user);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const setItem = storage.setItem.bind(storage);
+    vi.spyOn(storage, 'setItem').mockImplementation((k, v) => {
+      if (k === noteKey(id)) throw new DOMException('full', 'QuotaExceededError');
+      setItem(k, v);
+    });
+    await user.click(container.querySelector('li[data-node-id] .rich')!);
+    await user.keyboard('hello');
+    await goHome();
+    expect(storage.getItem(INDEX_KEY)).toContain(id);
+    expect(storage.getItem(noteKey(id))).not.toBeNull();
+  });
+
+  it('New note reports a failed create instead of crashing', async () => {
+    const { user, storage } = setup();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await user.click(screen.getByRole('button', { name: 'New note' }));
+    expect(alert).toHaveBeenCalled();
+    expect(location.hash).toBe('#/');
+    expect(home()).not.toBeNull();
   });
 });
 

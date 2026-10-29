@@ -29,7 +29,10 @@ const capacitorDeps: ExportDeps = {
 };
 
 /** Blob downloads do nothing in an Android WebView, so native builds hand the file to the share sheet. */
-export async function exportDocument(json: string, deps: ExportDeps = capacitorDeps, name = FILE_NAME): Promise<void> {
+export async function exportDocument(
+  json: string,
+  { deps = capacitorDeps, name = FILE_NAME }: { deps?: ExportDeps; name?: string } = {},
+): Promise<void> {
   if (!deps.isNative()) {
     deps.download(name, json);
     return;

@@ -42,6 +42,7 @@ describe('per-note persistence', () => {
     expect(storage.getItem('livenotes:note:N')).toContain('xyz');
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onSaved.mock.calls[0][0].nodes.a.text).toBe('xyz');
+    expect(onSaved.mock.calls[0][1]).toBe(JSON.stringify(doc('x'))); // what the key held before
   });
 
   it('writes nothing for a document that was only opened', async () => {

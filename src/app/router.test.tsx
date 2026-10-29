@@ -55,6 +55,14 @@ describe('useRoute and navigation', () => {
     expect(back).toHaveBeenCalled();
   });
 
+  it('navigate with replace swaps the entry instead of pushing one', async () => {
+    render(<Show />);
+    const before = history.length;
+    act(() => navigate('#/note/bad', { replace: true }));
+    expect(await screen.findByText('note bad')).toBeInTheDocument();
+    expect(history.length).toBe(before);
+  });
+
   it('goBack goes home when the note was opened directly', async () => {
     // A deep link or reload: a fresh module and an entry with no in-app history behind it.
     history.replaceState(null, '', '#/note/z');
@@ -62,8 +70,11 @@ describe('useRoute and navigation', () => {
     const fresh = await import('./router');
     render(<Show />);
     const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    const before = history.length;
     act(() => fresh.goBack());
     expect(back).not.toHaveBeenCalled();
     await waitFor(() => expect(location.hash).toBe('#/'));
+    // home replaces the deep-linked note, so back from home leaves the app
+    expect(history.length).toBe(before);
   });
 });
