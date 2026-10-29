@@ -30,9 +30,9 @@ export function safeStorage(get: () => Storage = () => window.localStorage): Sto
 }
 
 /** Anything unreadable falls back to the sample rather than a blank screen. */
-export function loadDoc(storage: Pick<Storage, 'getItem'>): Doc {
+export function loadDoc(storage: Pick<Storage, 'getItem'>, key: string = STORAGE_KEY): Doc {
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = storage.getItem(key);
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (isDoc(parsed)) return parsed;

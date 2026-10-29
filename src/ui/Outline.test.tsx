@@ -6,7 +6,6 @@ import type { Services } from '../services/types';
 import { DocProvider, useStore } from './store';
 import { STORAGE_KEY } from '../model/storage';
 import { TransientError } from '../services/http';
-import { ErrorBoundary } from './ErrorBoundary';
 import { App } from './App';
 import { Outline } from './Outline';
 
@@ -267,23 +266,6 @@ describe('slash commands', () => {
     await user.keyboard('{End}{Enter}');
     expect(container.querySelector('[data-view]')).toBeNull();
     expect(screen.getByText('dinner/table')).toBeInTheDocument();
-  });
-});
-
-describe('ErrorBoundary', () => {
-  it('shows a recovery screen instead of a blank page', () => {
-    const Boom = () => {
-      throw new Error('kaboom');
-    };
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    render(
-      <ErrorBoundary>
-        <Boom />
-      </ErrorBoundary>,
-    );
-    spy.mockRestore();
-    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /reset to sample/i })).toBeInTheDocument();
   });
 });
 

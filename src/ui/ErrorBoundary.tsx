@@ -1,13 +1,35 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { safeStorage, saveDoc, STORAGE_KEY } from '../model/storage';
-import { sampleDoc } from '../model/sample';
+import { safeStorage } from '../model/storage';
+import { exportDocument } from '../platform/export';
+
+interface Props {
+  children: ReactNode;
+  /** Injected by tests, since jsdom cannot reload. */
+  reload?: () => void;
+}
 
 interface State {
   error: Error | null;
 }
 
+/** Raw strings, not parsed docs: the crash may have come from data that does not parse. */
+function libraryBackup(): string {
+  const out: Record<string, string> = {};
+  const storage = safeStorage();
+  try {
+    for (let i = 0; storage && i < storage.length; i++) {
+      const k = storage.key(i);
+      const v = k?.startsWith('livenotes:') ? storage.getItem(k) : null;
+      if (k && v !== null) out[k] = v;
+    }
+  } catch {
+    // whatever was read so far is still worth saving
+  }
+  return JSON.stringify(out, null, 2);
+}
+
 /** A crash shouldn't leave a blank page with the user's notes unreachable. */
-export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
+export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
@@ -18,18 +40,16 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     console.error('LiveNotes crashed', error, info.componentStack);
   }
 
-  private downloadRaw = () => {
-    const raw = safeStorage()?.getItem(STORAGE_KEY) ?? '';
-    const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
-    Object.assign(document.createElement('a'), { href: url, download: 'livenotes-backup.json' }).click();
-    URL.revokeObjectURL(url);
+  private download = () => {
+    exportDocument(libraryBackup(), undefined, 'livenotes-backup.json').catch((e: unknown) =>
+      alert(`Backup failed: ${e instanceof Error ? e.message : String(e)}`),
+    );
   };
 
-  private reset = () => {
-    if (!confirm('Replace the saved document with the sample? Download a backup first if you need it.')) return;
-    const storage = safeStorage();
-    if (storage) saveDoc(storage, sampleDoc());
-    location.reload();
+  /** The library is the user's notes, so recovery only leaves the screen that crashed. */
+  private backToNotes = () => {
+    location.hash = '#/';
+    (this.props.reload ?? (() => location.reload()))();
   };
 
   render() {
@@ -39,11 +59,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
         <h1>Something went wrong</h1>
         <p>{this.state.error.message}</p>
         <div className="actions">
-          <button type="button" onClick={this.downloadRaw}>
+          <button type="button" onClick={this.download}>
             Download saved data
           </button>
-          <button type="button" onClick={this.reset}>
-            Reset to sample
+          <button type="button" onClick={this.backToNotes}>
+            Back to notes
           </button>
         </div>
       </div>

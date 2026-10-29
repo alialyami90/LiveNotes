@@ -29,12 +29,12 @@ const capacitorDeps: ExportDeps = {
 };
 
 /** Blob downloads do nothing in an Android WebView, so native builds hand the file to the share sheet. */
-export async function exportDocument(json: string, deps: ExportDeps = capacitorDeps): Promise<void> {
+export async function exportDocument(json: string, deps: ExportDeps = capacitorDeps, name = FILE_NAME): Promise<void> {
   if (!deps.isNative()) {
-    deps.download(FILE_NAME, json);
+    deps.download(name, json);
     return;
   }
-  const uri = await deps.writeCache(FILE_NAME, json);
+  const uri = await deps.writeCache(name, json);
   try {
     await deps.share(uri, 'LiveNotes export');
   } catch (e) {
