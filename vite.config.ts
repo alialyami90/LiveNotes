@@ -8,5 +8,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // Agent worktrees live under .claude/; only this checkout's tests belong to the run.
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });
