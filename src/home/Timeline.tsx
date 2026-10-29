@@ -19,31 +19,30 @@ interface Props {
   menuFor(meta: NoteMeta): ReactNode;
 }
 
+/** One section per non-empty bucket, each a rail of dates (DESIGN.md "The rail"). */
 export function Timeline({ upcoming, today, menuFor }: Props) {
-  if (upcoming.length === 0) return null;
   return (
-    <div className="timeline" role="group" aria-label="Upcoming">
+    <>
       {upcoming.map(({ bucket, notes }) => (
-        <section key={bucket} className="timeline__bucket" aria-labelledby={`bucket-${bucket}`}>
+        <section key={bucket} className="home-section" aria-labelledby={`bucket-${bucket}`}>
           <h2 className="section-head" id={`bucket-${bucket}`}>
             {LABELS[bucket]}
           </h2>
-          <ol className="timeline__list rail">
-            {notes.map((m, i) => {
-              const day = stampDay(m, today);
-              // Notes on the same day share one stamp, so the rail reads as a calendar.
-              const repeat = i > 0 && stampDay(notes[i - 1], today) === day;
-              return (
-                <li key={m.id} className="timeline__item">
-                  <Stamp iso={day} month={bucket === 'later'} hidden={repeat} />
-                  <NoteCard meta={m} variant="timeline" today={today} menu={menuFor(m)} />
-                </li>
-              );
-            })}
+          <ol className="rail">
+            {byDay(notes, today).map(({ day, notes: same }) => (
+              <li key={day} className="rail__item">
+                <Stamp iso={day} month={bucket === 'later'} today={day === today} />
+                <div className="rail__cards">
+                  {same.map((m) => (
+                    <NoteCard key={m.id} meta={m} variant="timeline" today={today} menu={menuFor(m)} />
+                  ))}
+                </div>
+              </li>
+            ))}
           </ol>
         </section>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -53,22 +52,27 @@ const stampDay = (m: NoteMeta, today: ISODate): ISODate => {
   return from < today ? today : from;
 };
 
-/** Decorative for screen readers: the card itself already says the range and how soon. */
-function Stamp({ iso, month, hidden }: { iso: ISODate; month: boolean; hidden: boolean }) {
+/** Notes arrive sorted by start, so same-day notes are adjacent and share one stamp. */
+function byDay(notes: NoteMeta[], today: ISODate): { day: ISODate; notes: NoteMeta[] }[] {
+  const groups: { day: ISODate; notes: NoteMeta[] }[] = [];
+  for (const m of notes) {
+    const day = stampDay(m, today);
+    const last = groups.at(-1);
+    if (last?.day === day) last.notes.push(m);
+    else groups.push({ day, notes: [m] });
+  }
+  return groups;
+}
+
+/** Decorative for screen readers: each card already says its range and how soon it is. */
+function Stamp({ iso, month, today }: { iso: ISODate; month: boolean; today: boolean }) {
   const [, m, d] = iso.split('-').map(Number);
+  // Day 0 (1970-01-01) was a Thursday, so +3 puts Monday at 0.
   const top = month ? MONTHS[m - 1] : WEEKDAYS[(dayNumber(iso) + 3) % 7];
   return (
-    <time
-      className={`stamp${month ? ' stamp--month' : ''}${hidden ? ' stamp--repeat' : ''}`}
-      dateTime={iso}
-      aria-hidden="true"
-    >
-      {!hidden && (
-        <>
-          <span className="stamp__weekday">{top}</span>
-          <span className="stamp__day">{d}</span>
-        </>
-      )}
-    </time>
+    <div className={`stamp${month ? ' stamp--month' : ''}${today ? ' is-today' : ''}`} aria-hidden="true">
+      <span className="stamp__weekday">{top}</span>
+      <span className="stamp__day">{d}</span>
+    </div>
   );
 }

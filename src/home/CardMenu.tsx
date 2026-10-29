@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useId, useState, type MouseEvent } from 'react';
 import type { NoteMeta } from '../library/types';
+import { useMenu } from '../ui/useMenu';
 import './home.css';
 
 interface Props {
@@ -16,41 +17,9 @@ const swallow = (e: MouseEvent) => {
 };
 
 export function CardMenu({ meta, onPin, onArchive, onDelete }: Props) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, rootRef, triggerRef, close, onKeyDown, onBlur } = useMenu();
   const [up, setUp] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
   const menuId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    root.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-    const onPointerDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
-  const close = (refocus: boolean) => {
-    setOpen(false);
-    if (refocus) trigger.current?.focus();
-  };
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      close(true);
-      return;
-    }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    const items = [...(root.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
-    if (items.length === 0) return;
-    e.preventDefault();
-    const at = items.indexOf(document.activeElement as HTMLElement);
-    const step = e.key === 'ArrowDown' ? 1 : -1;
-    items[(at + step + items.length) % items.length].focus();
-  };
 
   const choose = (e: MouseEvent, run: () => void) => {
     swallow(e);
@@ -64,18 +33,13 @@ export function CardMenu({ meta, onPin, onArchive, onDelete }: Props) {
   return (
     <div
       className="card-menu"
-      ref={root}
+      ref={rootRef}
       onKeyDown={onKeyDown}
       onClick={(e) => e.stopPropagation()}
-      onBlur={(e) => {
-        // A null relatedTarget (Safari doesn't focus buttons on click) is left to the pointerdown handler,
-        // otherwise the list would close before the click on an item lands.
-        const next = e.relatedTarget as Node | null;
-        if (next && !root.current?.contains(next)) setOpen(false);
-      }}
+      onBlur={onBlur}
     >
       <button
-        ref={trigger}
+        ref={triggerRef}
         type="button"
         className="card-menu__trigger"
         aria-label="Note actions"

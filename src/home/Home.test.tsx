@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Root } from '../app/Root';
+import { navigate } from '../app/router';
 import { createLibrary, INDEX_KEY, noteKey } from '../library/storage';
 import { memoryStorage } from '../library/memoryStorage';
 import type { Doc, Place } from '../model/types';
@@ -89,21 +90,35 @@ describe('Home timeline', () => {
     const card = screen.getByRole('link', { name: /Lisbon trip/ });
     expect(card).toHaveTextContent('Nov 3–6');
     expect(card).toHaveTextContent('in 6 days');
-    const item = card.closest('.timeline__item') as HTMLElement;
+    const item = card.closest('li.rail__item') as HTMLElement;
+    expect(item.parentElement).toHaveClass('rail');
+    expect(item.querySelector(':scope > div.stamp + div.rail__cards')).toContainElement(card);
     expect(item.querySelector('.stamp__weekday')).toHaveTextContent('Tue');
     expect(item.querySelector('.stamp__day')).toHaveTextContent('3');
-    expect(item.closest('.rail')).not.toBeNull();
+    expect(item.querySelector('.stamp')).not.toHaveClass('is-today');
   });
 
   it('stamps an ongoing plan with today and a Later plan with its month', () => {
     setup(seed([doc('Festival', ['Oct 26 to Oct 30 @Porto']), doc('Holidays', ['Dec 20 @Faro'])]));
-    const ongoing = screen.getByRole('link', { name: /Festival/ }).closest('.timeline__item') as HTMLElement;
+    const ongoing = screen.getByRole('link', { name: /Festival/ }).closest('.rail__item') as HTMLElement;
     expect(section('Today')).toContainElement(ongoing);
+    expect(ongoing.querySelector('.stamp')).toHaveClass('is-today');
     expect(ongoing.querySelector('.stamp__weekday')).toHaveTextContent('Wed');
     expect(ongoing.querySelector('.stamp__day')).toHaveTextContent('28');
-    const later = screen.getByRole('link', { name: /Holidays/ }).closest('.timeline__item') as HTMLElement;
+    const later = screen.getByRole('link', { name: /Holidays/ }).closest('.rail__item') as HTMLElement;
     expect(section('Later')).toContainElement(later);
-    expect(later.querySelector('.stamp')).toHaveTextContent('Dec20');
+    expect(later.querySelector('.stamp')).toHaveClass('stamp--month');
+    expect(later.querySelector('.stamp__weekday')).toHaveTextContent('Dec');
+    expect(later.querySelector('.stamp__day')).toHaveTextContent('20');
+  });
+
+  it('groups same-day notes under one stamp', () => {
+    setup(seed([doc('Museum', ['Nov 3 @Lisbon']), doc('Dinner', ['Nov 3 late dinner']), doc('Fado', ['Nov 4 fado night'])]));
+    const items = section('Next week').querySelectorAll('li.rail__item');
+    expect(items).toHaveLength(2);
+    expect(items[0].querySelectorAll('.rail__cards .note-card')).toHaveLength(2);
+    expect(items[0].querySelectorAll('.stamp')).toHaveLength(1);
+    expect(items[1].querySelector('.stamp__day')).toHaveTextContent('4');
   });
 
   it('orders recent notes by updatedAt, newest first', () => {
@@ -120,6 +135,16 @@ describe('Home timeline', () => {
 });
 
 describe('Home search', () => {
+  it('keeps the no-match live region mounted and empty until it is needed', async () => {
+    const { user } = setup();
+    const region = home().querySelector('.home-status') as HTMLElement;
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toBeEmptyDOMElement();
+    await user.type(screen.getByRole('searchbox', { name: 'Search notes' }), 'zzz');
+    expect(home().querySelector('.home-status')).toBe(region);
+    expect(region).toHaveTextContent('No notes match "zzz"');
+  });
+
   it('filters live to matching notes', async () => {
     const { user } = setup();
     await user.type(screen.getByRole('searchbox', { name: 'Search notes' }), 'lisb');
@@ -131,7 +156,7 @@ describe('Home search', () => {
     const { user } = setup();
     const search = screen.getByRole('searchbox', { name: 'Search notes' });
     await user.type(search, 'zzz');
-    expect(screen.getByText('No notes match "zzz"')).toBeInTheDocument();
+    expect(screen.getByText('No notes match "zzz"')).toHaveAttribute('role', 'status');
     expect(cardTitles()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Clear' }));
     expect(search).toHaveValue('');
@@ -178,7 +203,7 @@ describe('Home card actions', () => {
     const { user, storage } = setup();
     await act_(user, 'Groceries', 'Delete');
     expect(cardTitles()).not.toContain('Groceries');
-    expect(screen.getByRole('status')).toHaveTextContent('Note deleted');
+    expect(screen.getByText('Note deleted')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Undo' }));
     expect(cardTitles()).toContain('Groceries');
     expect(screen.queryByText('Note deleted')).toBeNull();
@@ -197,10 +222,112 @@ describe('Home card actions', () => {
   });
 });
 
+describe('Home focus after delete', () => {
+  it('a keyboard Delete leaves Undo focused, and Undo focuses the restored card', async () => {
+    const { user } = setup();
+    const card = screen.getByRole('heading', { name: 'Groceries' }).closest('.note-card-wrap') as HTMLElement;
+    within(card).getByRole('button', { name: 'Note actions' }).focus();
+    await user.keyboard('{Enter}');
+    await user.keyboard('{ArrowDown}{ArrowDown}');
+    expect(within(card).getByRole('menuitem', { name: 'Delete' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const undo = screen.getByRole('button', { name: 'Undo' });
+    expect(undo).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('link', { name: /Groceries/ })).toHaveFocus();
+  });
+
+  it('moves focus to the screen heading when the undo window ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { user } = setup();
+    await act_(user, 'Groceries', 'Delete');
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveFocus();
+    act(() => vi.advanceTimersByTime(6000));
+    expect(screen.getByRole('heading', { level: 1, name: 'LiveNotes' })).toHaveFocus();
+  });
+
+  it('leaves focus alone when the window ends while the user is elsewhere', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { user } = setup();
+    await act_(user, 'Groceries', 'Delete');
+    const search = screen.getByRole('searchbox', { name: 'Search notes' });
+    await user.click(search);
+    act(() => vi.advanceTimersByTime(6000));
+    expect(search).toHaveFocus();
+  });
+
+  it('opening another note ends the undo window', async () => {
+    const { user, storage } = setup();
+    await act_(user, 'Groceries', 'Delete');
+    act(() => navigate('#/note/n4'));
+    await screen.findByText('read chapter 4');
+    expect(storage.getItem(noteKey('n3'))).toBeNull();
+    expect(indexIds(storage)).not.toContain('n3');
+    act(() => navigate('#/'));
+    await waitFor(() => expect(home()).not.toBeNull());
+    expect(screen.queryByText('Note deleted')).toBeNull();
+  });
+});
+
+describe('Home write failures', () => {
+  it('alerts when a pin cannot be saved', async () => {
+    const { user, storage } = setup();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    await act_(user, 'Groceries', 'Pin');
+    expect(alert).toHaveBeenCalledWith('Could not pin the note: storage is full or unavailable.');
+    expect(screen.queryByRole('region', { name: 'Pinned' })).toBeNull();
+  });
+});
+
 describe('Home states', () => {
   it('shows the hint card when the library holds only the sample note', () => {
     setup(memoryStorage());
     expect(screen.getByText('Tap + to start a note. Type @ for places, dates like Nov 3.')).toBeInTheDocument();
+  });
+
+  it('counts only active notes for the hint', () => {
+    const storage = memoryStorage();
+    const lib = createLibrary(storage, { today: () => TODAY });
+    lib.setArchived(lib.create(GROCERIES).id, true);
+    setup(storage);
+    expect(screen.getByText(/Tap \+ to start a note/)).toBeInTheDocument();
+  });
+
+  it('hides the hint after a new note is written', async () => {
+    const { user } = setup(memoryStorage());
+    await user.click(screen.getByRole('button', { name: 'New note' }));
+    await waitFor(() => expect(openedId()).toBeTruthy());
+    await waitFor(() => expect(home()).toBeNull());
+    await user.keyboard('Weekend');
+    act(() => navigate('#/'));
+    await waitFor(() => expect(home()).not.toBeNull());
+    expect(cardTitles()).toContain('Weekend');
+    expect(screen.queryByText(/Tap \+ to start a note/)).toBeNull();
+  });
+
+  it('puts New note in the header on wide screens, with no floating button', () => {
+    const query = (q: string) =>
+      ({ matches: q === '(min-width: 640px)', media: q, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList;
+    Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true, value: query });
+    onTestFinished(() => {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    });
+    setup();
+    const buttons = screen.getAllByRole('button', { name: 'New note' });
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].closest('header')).not.toBeNull();
+    expect(home().querySelector('.fab')).toBeNull();
+  });
+
+  it('shows the New note button floating on phones', () => {
+    setup();
+    const button = screen.getByRole('button', { name: 'New note' });
+    expect(button).toHaveClass('fab');
+    expect(button.closest('header')).toBeNull();
   });
 
   it('hides the hint card once there are other notes', () => {

@@ -2,9 +2,9 @@ import { goBack } from '../app/router';
 import { useLibrary } from '../library/LibraryProvider';
 import { archivedNotes } from '../library/sections';
 import { useCardMenu } from './cardActions';
-import { CardList } from './Home';
+import { CardList } from './CardList';
 import './home.css';
-import './screens.css';
+import './home-screens.css';
 
 export function Archive() {
   const { metas, today } = useLibrary();
@@ -24,7 +24,9 @@ export function Archive() {
         >
           <span aria-hidden="true">←</span>
         </a>
-        <h1 className="screen-header__title">Archive</h1>
+        <h1 className="screen-header__title" tabIndex={-1}>
+          Archive
+        </h1>
       </header>
       <div className="screen__body">
         {notes.length === 0 ? (

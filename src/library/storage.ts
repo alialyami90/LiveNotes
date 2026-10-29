@@ -13,7 +13,10 @@ export const noteKey = (id: string): string => NOTE_PREFIX + id;
 
 /** The undo toast lasts about 5 s; anything deleted longer ago than this is final. */
 const UNDO_WINDOW_MS = 6000;
-const SAMPLE_TITLE = 'Portugal road trip (sample)';
+export const SAMPLE_TITLE = 'Portugal road trip (sample)';
+
+/** The sample trip as a library note: dated around `today` and titled so it reads as example content. */
+export const sampleNote = (today: ISODate): Doc => ({ ...sampleDoc(new Date(`${today}T12:00:00`)), title: SAMPLE_TITLE });
 
 /** key/length are optional so a minimal injected storage still works (index rebuild is skipped). */
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & Partial<Pick<Storage, 'key' | 'length'>>;
@@ -127,7 +130,7 @@ export function createLibrary(storage: Store, opts: Options = {}): Library {
     const legacy = parse(get(LEGACY_KEY));
     const legacyDoc = isDoc(legacy) ? legacy : null;
     // An unreadable legacy value is left alone: it is the only copy there is.
-    const doc = legacyDoc ?? { ...sampleDoc(new Date(`${today()}T12:00:00`)), title: SAMPLE_TITLE };
+    const doc = legacyDoc ?? sampleNote(today());
     const meta = metaFor(newId(), doc, now());
     metas = [meta];
     try {

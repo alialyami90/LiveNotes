@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import { goBack, navigate } from '../app/router';
 import { useLibrary } from '../library/LibraryProvider';
 import { isBlankDoc } from '../library/blank';
@@ -6,6 +5,7 @@ import { exportDocument } from '../platform/export';
 import { MobileToolbar } from '../ui/MobileToolbar';
 import { Outline } from '../ui/Outline';
 import { useStore } from '../ui/store';
+import { useMenu } from '../ui/useMenu';
 import { TitleField } from './TitleField';
 import './screen.css';
 
@@ -25,39 +25,13 @@ export function exportName(title: string | undefined): string {
 
 export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
   const { doc } = useStore();
-  const { metas, library, refresh, deleteWithUndo } = useLibrary();
+  const { metas, library, attempt, deleteWithUndo } = useLibrary();
   const meta = metas.find((m) => m.id === id);
   const pinned = !!meta?.pinned;
   const archived = !!meta?.archived;
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    wrapRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-    const onPointer = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointer);
-    return () => document.removeEventListener('pointerdown', onPointer);
-  }, [menuOpen]);
-
-  const closeMenu = () => {
-    setMenuOpen(false);
-    buttonRef.current?.focus();
-  };
-
-  /** A failed write must not take the screen down; the note simply stays as it was. */
-  const mutate = (what: string, run: () => void) => {
-    try {
-      run();
-    } catch (e) {
-      console.warn(`LiveNotes: could not ${what}`, e);
-    }
-    refresh();
-  };
+  const menu = useMenu();
+  const menuOpen = menu.open;
 
   const onExport = () =>
     exportDocument(JSON.stringify(doc, null, 2), { name: exportName(doc.title?.trim() || meta?.summary.title) }).catch((e: unknown) =>
@@ -65,8 +39,8 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
     );
 
   const items: { label: string; danger?: boolean; run: () => void }[] = [
-    { label: pinned ? 'Unpin' : 'Pin', run: () => mutate('pin the note', () => library.setPinned(id, !pinned)) },
-    { label: archived ? 'Unarchive' : 'Archive', run: () => mutate('archive the note', () => library.setArchived(id, !archived)) },
+    { label: pinned ? 'Unpin' : 'Pin', run: () => attempt(pinned ? 'unpin the note' : 'pin the note', () => library.setPinned(id, !pinned)) },
+    { label: archived ? 'Unarchive' : 'Archive', run: () => attempt(archived ? 'unarchive the note' : 'archive the note', () => library.setArchived(id, !archived)) },
     { label: 'Export', run: () => void onExport() },
     {
       label: 'Delete',
@@ -89,27 +63,18 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
         {archived && <span className="note-pill">Archived</span>}
         <div
           className="note-menu-wrap"
-          ref={wrapRef}
-          onBlur={(e) => {
-            // A null relatedTarget (Safari doesn't focus buttons on click) is left to the pointerdown handler,
-            // otherwise the menu would close before the click on an item lands.
-            const next = e.relatedTarget as Node | null;
-            if (menuOpen && next && !wrapRef.current?.contains(next)) setMenuOpen(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape' || !menuOpen) return;
-            e.stopPropagation();
-            closeMenu();
-          }}
+          ref={menu.rootRef}
+          onBlur={menu.onBlur}
+          onKeyDown={menu.onKeyDown}
         >
           <button
             type="button"
-            ref={buttonRef}
+            ref={menu.triggerRef}
             className="note-bar-btn"
             aria-label="Note menu"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={menu.toggle}
           >
             ⋯
           </button>
@@ -122,7 +87,7 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
                   role="menuitem"
                   className={`note-menu-item${item.danger ? ' is-danger' : ''}`}
                   onClick={() => {
-                    closeMenu();
+                    menu.close(true);
                     item.run();
                   }}
                 >

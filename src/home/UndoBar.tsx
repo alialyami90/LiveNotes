@@ -12,6 +12,13 @@ export function UndoBar({ onUndo, onExpire, ms = 6000 }: Props) {
   const expire = useRef(onExpire);
   expire.current = onExpire;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const undo = useRef<HTMLButtonElement>(null);
+
+  // A keyboard delete removes the focused card with it; catch focus here instead of losing it to <body>.
+  useEffect(() => {
+    const at = document.activeElement;
+    if (!at || at === document.body) undo.current?.focus();
+  }, []);
 
   useEffect(() => {
     timer.current = setTimeout(() => expire.current(), ms);
@@ -22,6 +29,7 @@ export function UndoBar({ onUndo, onExpire, ms = 6000 }: Props) {
     <div className="undo-bar" role="status">
       <span>Note deleted</span>
       <button
+        ref={undo}
         type="button"
         className="undo-bar__undo"
         onClick={() => {

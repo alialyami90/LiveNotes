@@ -9,7 +9,8 @@ import { isBlankDoc } from '../library/blank';
 import { LibraryProvider, useLibrary } from '../library/LibraryProvider';
 import { memoryStorage } from '../library/memoryStorage';
 import { Archive } from '../home/Archive';
-import { Home, PendingUndo } from '../home/Home';
+import { Home } from '../home/Home';
+import { PendingUndo } from '../home/PendingUndo';
 import { NoteRoute } from './NoteRoute';
 import { useRoute, type Route } from './router';
 
@@ -37,6 +38,7 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
   const lastDocs = useRef(new Map<string, Doc>());
   const onDoc = useCallback((id: string, doc: Doc) => void lastDocs.current.set(id, doc), []);
   useDiscardOnLeave(route, lastDocs.current);
+  useExpireUndoOnOpen(route);
   if (route.name === 'note') {
     return <NoteRoute key={route.id} id={route.id} storage={storage} services={services} onDoc={onDoc} />;
   }
@@ -46,6 +48,18 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
       <PendingUndo />
     </>
   );
+}
+
+/**
+ * Opening another note ends the undo window, so the bar never resurfaces on home long after
+ * the delete (UndoBar's timer stops while the note screen is up).
+ */
+function useExpireUndoOnOpen(route: Route) {
+  const { pendingDelete, expireDelete } = useLibrary();
+  const openId = route.name === 'note' ? route.id : null;
+  useEffect(() => {
+    if (openId !== null && pendingDelete !== null && openId !== pendingDelete) expireDelete();
+  }, [openId, pendingDelete, expireDelete]);
 }
 
 /**
