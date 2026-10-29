@@ -12,6 +12,12 @@ interface LibraryValue {
   refresh(): void;
   /** Created by this tab since it loaded: the only notes that leaving empty may discard. */
   isNewThisSession(id: string): boolean;
+  /** The note whose delete can still be undone; Home shows the undo bar while it is set. */
+  pendingDelete: string | null;
+  /** Soft-deletes now; the note is purged when the undo window ends or the app hides. */
+  deleteWithUndo(id: string): void;
+  undoDelete(): void;
+  expireDelete(): void;
 }
 
 const LibraryContext = createContext<LibraryValue | null>(null);
@@ -56,6 +62,60 @@ export function LibraryProvider({ children, storage, today = localToday() }: Pro
   const refresh = useCallback(() => setMetas(library.list()), [library]);
   const isNewThisSession = useCallback((id: string) => created.has(id), [created]);
 
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const pendingRef = useRef(pendingDelete);
+  pendingRef.current = pendingDelete;
+
+  // A failed write must not take the screen down; the note simply stays as it was.
+  const attempt = useCallback(
+    (what: string, run: () => void) => {
+      try {
+        run();
+      } catch (e) {
+        console.warn(`LiveNotes: could not ${what}`, e);
+      }
+      refresh();
+    },
+    [refresh],
+  );
+
+  const expireDelete = useCallback(() => {
+    if (pendingRef.current === null) return;
+    setPendingDelete(null);
+    attempt('delete the note', () => library.purgeDeleted());
+  }, [library, attempt]);
+
+  const deleteWithUndo = useCallback(
+    (id: string) => {
+      // Only one undo at a time: a second delete makes the first one final.
+      const previous = pendingRef.current;
+      setPendingDelete(id);
+      attempt('delete the note', () => {
+        if (previous !== null && previous !== id) library.purgeDeleted();
+        library.softDelete(id);
+      });
+    },
+    [library, attempt],
+  );
+
+  const undoDelete = useCallback(() => {
+    const id = pendingRef.current;
+    if (id === null) return;
+    setPendingDelete(null);
+    attempt('restore the note', () => library.undoDelete(id));
+  }, [library, attempt]);
+
+  // Leaving the app ends the undo window (spec §2), so a delete is never left half-done.
+  useEffect(() => {
+    const onHide = () => document.visibilityState === 'hidden' && expireDelete();
+    window.addEventListener('pagehide', expireDelete);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', expireDelete);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [expireDelete]);
+
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== INDEX_KEY) return;
@@ -67,8 +127,8 @@ export function LibraryProvider({ children, storage, today = localToday() }: Pro
   }, [library, refresh]);
 
   const value = useMemo(
-    () => ({ metas, library, today, refresh, isNewThisSession }),
-    [metas, library, today, refresh, isNewThisSession],
+    () => ({ metas, library, today, refresh, isNewThisSession, pendingDelete, deleteWithUndo, undoDelete, expireDelete }),
+    [metas, library, today, refresh, isNewThisSession, pendingDelete, deleteWithUndo, undoDelete, expireDelete],
   );
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
 }
