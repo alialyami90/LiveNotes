@@ -173,8 +173,8 @@ is the binding authority, plus `CLAUDE.md`, `PRODUCT.md` and `DESIGN.md`.
   ```ts
   export type Mode = 'drive' | 'walk' | 'transit' | 'bike' | 'fly';
   /** Popup order; `word` is what the popup inserts. */
-  export const MODES: readonly { mode: Mode; word: string; label: string }[];
-  //   [{drive,'drive','Drive'},{walk,'walk','Walk'},{transit,'transit','Public transport'},{bike,'bike','Bike'},{fly,'fly','Fly'}]
+  export const MODES: readonly { mode: Mode; word: string; label: string; icon: string }[];
+  //   [{drive,'drive','Drive','🚗'},{walk,'walk','Walk','🚶'},{transit,'transit','Public transport','🚆'},{bike,'bike','Bike','🚲'},{fly,'fly','Fly','✈'}]
   export function modeOf(word: string): Mode | undefined;          // case-insensitive, Global Constraints list
   export function recognizePhrases(segments: Segment[]): Segment[]; // the tokenizer post-pass
   /** Where to insert a mode word if `text` just completed a "to <place>" with no mode, else null. */
@@ -353,7 +353,7 @@ is the binding authority, plus `CLAUDE.md`, `PRODUCT.md` and `DESIGN.md`.
   `src/formula/format.test.ts`
 
 **Interfaces:**
-- Consumes `Mode`, `MODES` and `Segment` from Task 1.
+- Consumes `Mode`, `MODES` (with `icon`) and `Segment` from Task 1.
 - Produces, in `values.ts`:
 
   ```ts
@@ -375,8 +375,8 @@ is the binding authority, plus `CLAUDE.md`, `PRODUCT.md` and `DESIGN.md`.
     duration, or the error `no time for transit` / `no time for fly` when
     there are no seconds.
 - In `format.ts`:
-  - Produces `TRAVEL_ICON: Record<Mode, string>`:
-    drive 🚗, walk 🚶, transit 🚆, bike 🚲, fly ✈.
+  - Produces `TRAVEL_ICON: Record<Mode, string>`, built from `MODES[].icon`
+    (drive 🚗, walk 🚶, transit 🚆, bike 🚲, fly ✈).
   - `formatValue` handles travel per the Global Constraints. Transit has no
     link text; the chip adds it.
 
@@ -591,9 +591,8 @@ is the binding authority, plus `CLAUDE.md`, `PRODUCT.md` and `DESIGN.md`.
     at least 44 px on coarse pointers
 
 **Interfaces:**
-- Consumes `MODES`, `routeWithoutMode` and `insertModeWord` (Task 1), and
-  `TRAVEL_ICON` (Task 3; wave B, so import it after Task 3 lands, or use a
-  local copy of the five icons and switch over at integration).
+- Consumes `MODES` (labels and icons), `routeWithoutMode` and
+  `insertModeWord` (Task 1).
 - Produces:
 
   ```ts
@@ -688,7 +687,7 @@ is the binding authority, plus `CLAUDE.md`, `PRODUCT.md` and `DESIGN.md`.
   - A fake `search` resolves `[elPrat(kind airport), {…madrid, elsewhere: true}]`
     near Barcelona: rows read `✈️ El Prat…`, then the divider `Elsewhere`,
     then `🏙️ Madrid…`.
-  - ArrowDown twice then Enter picks Madrid; the divider is skipped. The
+  - ArrowDown once then Enter picks Madrid; the divider is skipped. The
     stored place has no `elsewhere` key and has `kind: 'city'`.
   - With no parent place there is no divider, even with flagged rows.
   - `onUpdate` with an early partial list renders those rows before the
