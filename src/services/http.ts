@@ -187,6 +187,9 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
   return {
     async geocode(name, near) {
       const om = await settle(openMeteo(name, 1));
+      // Without the town source we can't tell whether a major city wins, and a guessed landmark
+      // would be stored for good; a retry later costs only a delay.
+      if (om.transient) throw failure(om);
       const town = om.value[0];
       // A major city, or a town inside the parent's area, is what the mention means.
       if (town && (!near || isMajor(town) || inArea(town, areaOf(near)))) return toPlace(town);
@@ -194,8 +197,9 @@ export function httpServices(fetchFn: typeof fetch = (...a) => fetch(...a), opts
       const area = near ? await settle(photon(name, 5, near, 'background', undefined, areaOf(near))) : undefined;
       const inside = area?.value.find((p) => !p.street);
       if (inside) return toPlace(inside);
-      // Then the worldwide rules: a nearby town, else the biased landmark, which a street never is.
-      if (town && isNear(town, near)) return toPlace(town);
+      // Then the worldwide rules: a nearby town (once the area has really been searched),
+      // else the biased landmark, which a street never is.
+      if (town && isNear(town, near) && !area?.transient) return toPlace(town);
       const ph = await settle(photon(name, 1, near, 'background'));
       const landmark = ph.value[0];
       if (landmark && !(landmark.street && town)) return toPlace(landmark);

@@ -514,8 +514,45 @@ describe('searching inside the parent place first (spec §6)', () => {
     const f = fakeFetch(airportRoutes());
     const updates: unknown[][] = [];
     const results = await httpServices(f.fn, noSleep).search('airport', BARCELONA, { onUpdate: (found) => updates.push(found) });
-    expect(updates.length).toBeGreaterThanOrEqual(2);
+    expect(updates).toHaveLength(3);
     expect(updates[updates.length - 1]).toEqual(results);
+  });
+
+  it('never calls onUpdate once the search is cancelled', async () => {
+    const f = fakeFetch(airportRoutes());
+    const s = httpServices(f.fn, { sleep: (ms) => new Promise((r) => setTimeout(r, ms)), photonGapMs: 30 });
+    const first = s.search('aaa');
+    const controller = new AbortController();
+    const updates: unknown[][] = [];
+    const second = s.search('airport', BARCELONA, { signal: controller.signal, onUpdate: (found) => updates.push(found) });
+    controller.abort();
+    await first;
+    await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(f.urls.some((u) => OM.test(u) && u.includes('name=airport'))).toBe(true);
+    expect(updates).toEqual([]);
+  });
+
+  it('while Open-Meteo is down, geocode settles on no Photon answer (it might have been a major city)', async () => {
+    let omCalls = 0;
+    const f = fakeFetch([
+      { match: OM, respond: () => { omCalls++; return { status: 503 }; } },
+      { match: BBOX, respond: () => photon(['Madrid', 41.39, 2.17, 'Barcelona', 'Spain', 'amenity', 'bar']) },
+      { match: PHOTON, respond: () => photon(['Madrid', 41.39, 2.17, 'Barcelona', 'Spain', 'amenity', 'bar']) },
+    ]);
+    await expect(httpServices(f.fn, noSleep).geocode('madrid', BARCELONA)).rejects.toBeInstanceOf(TransientError);
+    expect(omCalls).toBe(3);
+  });
+
+  it('a nearby (not inside) town is not accepted while the area could not be searched', async () => {
+    let bboxCalls = 0;
+    const f = fakeFetch([
+      { match: OM, respond: () => om(['Vilanova', 41.85, 2.17, 'Catalonia', 'Spain', 9000, 'PPL']) },
+      { match: BBOX, respond: () => { bboxCalls++; return { status: 503 }; } },
+      { match: PHOTON, respond: () => photon() },
+    ]);
+    await expect(httpServices(f.fn, noSleep).geocode('vilanova', BARCELONA)).rejects.toBeInstanceOf(TransientError);
+    expect(bboxCalls).toBe(3);
   });
 
   it('a failing bbox stage still leaves the Elsewhere rows, and geocode falls through to the worldwide result', async () => {
