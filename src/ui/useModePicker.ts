@@ -1,16 +1,34 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { MODES, insertModeWord, routeWithoutMode } from '../syntax/phrases';
 import { scan } from '../syntax/scan';
+import { activeMention } from '../syntax/mention';
 
 interface Armed {
   text: string;
   at: number;
+  /** Where the caret was; moving it anywhere else ends the phrase. */
+  caret: number;
   /** R10: `${at}|${mentionRaw}`; a dismissed signature never re-arms. */
   sig: string;
 }
 
 // Holding a modifier is not "typing another key" (Shift for a capital, Ctrl before a shortcut).
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'AltGraph']);
+
+const BOUNDARY = /^[\s\p{P}]$/u;
+const CLOSES_BRACKET = /@\[[^\]]*\]$/;
+
+/**
+ * True when `next` is `prev` plus one space or punctuation mark typed just before
+ * `caret` that ends a mention. Not a hyphen or apostrophe that continues the name
+ * (@Porto-Novo), and not the `]` closing `@[São Bento]`: the space that usually
+ * follows would dismiss a popup opened on the bracket.
+ */
+function endsMention(prev: string, next: string, caret: number): boolean {
+  if (next.length !== prev.length + 1 || caret < 1) return false;
+  if (!BOUNDARY.test(next[caret - 1]) || next.slice(0, caret - 1) + next.slice(caret) !== prev) return false;
+  return !activeMention(next, caret) && !CLOSES_BRACKET.test(next.slice(0, caret));
+}
 
 function signature(text: string, caret: number, at: number): string {
   const places = scan(text.slice(0, caret)).filter((s) => s.kind === 'place');
@@ -50,8 +68,19 @@ export function useModePicker(text: string) {
     if (!found) return;
     const sig = signature(next, caret, found.at);
     if (dismissed.current.has(sig)) return;
-    setArmed({ text: next, at: found.at, sig });
+    setArmed({ text: next, at: found.at, caret, sig });
     setActive(0);
+  };
+
+  /** Arms after an edit only when the user just typed the end of a mention. */
+  const armAfterChange = (prev: string, next: string, caret: number) => {
+    if (endsMention(prev, next, caret)) arm(next, caret);
+  };
+
+  /** A tap, click or selection away from the armed caret dismisses the phrase. */
+  const caretMoved = (start: number, end: number) => {
+    const a = armedRef.current;
+    if (a && (start !== a.caret || end !== a.caret)) dismiss();
   };
 
   const choose = (i: number, caret: number): { text: string; caret: number } | null => {
@@ -83,5 +112,5 @@ export function useModePicker(text: string) {
     return 'pass';
   };
 
-  return { open, active, arm, dismiss, setActive, choose, onKeyDown };
+  return { open, active, arm, armAfterChange, caretMoved, dismiss, setActive, choose, onKeyDown };
 }

@@ -29,14 +29,6 @@ function Mirror({ text }: { text: string }) {
   );
 }
 
-const BOUNDARY = /^[\s\p{P}]$/u;
-
-/** True when `next` is `prev` plus one space or punctuation mark just before `caret`. */
-function typedBoundary(prev: string, next: string, caret: number): boolean {
-  if (next.length !== prev.length + 1 || caret < 1) return false;
-  return BOUNDARY.test(next[caret - 1]) && next.slice(0, caret - 1) + next.slice(caret) === prev;
-}
-
 const VIEW_COMMAND = /(?:^|\s+)\/(map|calendar|table|none)$/;
 
 export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
@@ -59,9 +51,13 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   const { items, loading } = usePlaceSearch(pickerOpen ? mention.query : null, nearKey ? viewDoc.places[nearKey] : undefined);
   const showing = pickerOpen && (items.length > 0 || loading);
   const highlighted = Math.min(active, Math.max(items.length - 1, 0));
-  const trackCaret = () => setCaretPos(ref.current?.selectionStart ?? 0);
   // The travel-mode popup; the place picker wins while it is showing.
   const mode = useModePicker(text);
+  const trackCaret = () => {
+    const el = ref.current;
+    setCaretPos(el?.selectionStart ?? 0);
+    if (el) mode.caretMoved(el.selectionStart, el.selectionEnd);
+  };
   const modeShowing = mode.open && !showing;
 
   const pick = (s: Suggestion) => {
@@ -184,13 +180,11 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
           const value = e.target.value;
           const at = e.target.selectionStart;
           apply((d) => setText(d, id, value));
-          const typing = activeMention(value, at);
           setCaretPos(at);
-          setArmedAt(typing?.start ?? null);
+          setArmedAt(activeMention(value, at)?.start ?? null);
           setActive(0);
-          // A space or punctuation just typed after a mention completes a phrase; a
-          // hyphen or apostrophe that continues the name (@Porto-Novo) does not.
-          if (!typing && typedBoundary(text, value, at)) mode.arm(value, at);
+          // An IME's pre-edit text is not typed yet; the change after it commits is.
+          if (!composing && !(e.nativeEvent as InputEvent).isComposing) mode.armAfterChange(text, value, at);
         }}
         onSelect={trackCaret}
         onKeyDown={onKeyDown}

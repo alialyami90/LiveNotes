@@ -194,6 +194,59 @@ describe('travel-mode popup', () => {
   });
 });
 
+describe('travel-mode popup: fix round 1', () => {
+  it('closes when the caret is moved elsewhere, so Enter at the start inserts a bullet above', async () => {
+    const { user, container } = setup();
+    const editor = await edit(user, container);
+    await user.keyboard('{End} to @porto ');
+    expect(popup()).not.toBeNull();
+    editor.setSelectionRange(0, 0);
+    fireEvent.select(editor);
+    expect(popup()).toBeNull();
+    await user.keyboard('{Enter}');
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(2);
+    expect(container.querySelector('li[data-node-id="a"]')?.textContent).toContain('go to ');
+    expect(container.querySelector('li[data-node-id="a"]')?.textContent).not.toContain('drive');
+  });
+
+  it('closes when a range is selected from the phrase caret, and stays dismissed', async () => {
+    const { user, container } = setup();
+    const editor = await edit(user, container);
+    await user.keyboard('{End} to @porto ');
+    editor.setSelectionRange(10, 13);
+    fireEvent.select(editor);
+    expect(popup()).toBeNull();
+    editor.setSelectionRange(13, 13);
+    fireEvent.select(editor);
+    expect(popup()).toBeNull();
+  });
+
+  it('a hand-typed bracket mention opens it on the space after "]", not on the "]"', async () => {
+    const { user, container } = setup();
+    const editor = await edit(user, container);
+    await user.keyboard('{End} to @[[Porto]');
+    expect(editor).toHaveValue('go to @[Porto]');
+    expect(popup()).toBeNull();
+    await user.keyboard(' ');
+    expect(popup()).not.toBeNull();
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(editor).toHaveValue('go walk to @[Porto] ');
+  });
+
+  it('does not arm while an IME is composing', async () => {
+    const { user, container } = setup('go to @porto');
+    const editor = await edit(user, container);
+    fireEvent.compositionStart(editor);
+    fireEvent.change(editor, { target: { value: 'go to @porto ' } });
+    expect(popup()).toBeNull();
+    fireEvent.compositionEnd(editor);
+    // not dismissed, merely never armed: the same space typed outside composition opens it
+    fireEvent.change(editor, { target: { value: 'go to @porto' } });
+    fireEvent.change(editor, { target: { value: 'go to @porto ' } });
+    expect(popup()).not.toBeNull();
+  });
+});
+
 describe('phrase highlighting in the editor mirror', () => {
   it('colours mode and weather words, and draws exactly the textarea text', async () => {
     const { user, container } = setup('weather then drive to @porto');
