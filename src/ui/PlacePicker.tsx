@@ -19,6 +19,16 @@ export function PlacePicker({ items, active, loading, onPick, onHover }: Props) 
     ref.current?.scrollIntoView?.({ block: 'nearest' });
   }, [items.length > 0]);
 
+  // The list scrolls inside a fixed-height box, so a row reached by the arrow keys (or by
+  // wrapping from the first row to the last) can be out of sight. Skip the first render:
+  // opening the picker must not scroll beyond the effect above.
+  const lastActive = useRef(active);
+  useEffect(() => {
+    if (lastActive.current === active) return;
+    lastActive.current = active;
+    ref.current?.querySelectorAll('[role="option"]')[active]?.scrollIntoView?.({ block: 'nearest' });
+  }, [active]);
+
   if (items.length === 0) {
     return loading ? (
       <div ref={ref} className="picker picker-status" aria-live="polite">

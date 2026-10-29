@@ -94,7 +94,7 @@
   color: var(--ink-soft);
 }
 @media (pointer: coarse) {
-  .picker-option { padding: var(--sp-3); }
+  .picker-option { padding: var(--sp-3); min-height: 44px; } /* align-items: center keeps a one-line row centred */
   .agenda .entry { min-height: 44px; display: flex; align-items: center; }
   .add-row, .empty { min-height: 44px; padding: 0 var(--sp-3); }
   /* 44px hit area around the one-line error chip without changing its line box */

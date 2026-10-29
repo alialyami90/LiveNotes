@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode, Place } from '../model/types';
@@ -123,5 +123,25 @@ describe('place picker sections and icons', () => {
     expect(names.filter((n) => n.startsWith('Saved'))).toHaveLength(4);
     expect(names.filter((n) => n.startsWith('In '))).toHaveLength(8);
     expect(names.filter((n) => n.startsWith('Out '))).toHaveLength(8);
+  });
+
+  it('scrolls the newly highlighted row into view as the arrow keys move (wrapping too)', async () => {
+    const rows: Found[] = Array.from({ length: 16 }, (_, i) => ({ name: `Row ${i}`, lat: 41 + i / 20, lon: 2, ...(i >= 8 ? { elsewhere: true as const } : {}) }));
+    const { user } = await typeMention(tripDoc(), services(async () => rows));
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(16));
+    const options = screen.getAllByRole('option');
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn(function (this: Element) {
+      scrolled.push(this);
+    });
+    try {
+      await user.keyboard('{ArrowDown}');
+      expect(scrolled.at(-1)).toBe(options[1]);
+      await user.keyboard('{ArrowUp}{ArrowUp}'); // 1 -> 0 -> wraps to the last row
+      expect(scrolled.at(-1)).toBe(options[15]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 });

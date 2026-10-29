@@ -8,6 +8,7 @@ export interface Suggestion {
   /** Never carries `elsewhere`: it is stored as-is when picked. */
   place: Place;
   saved: boolean;
+  /** The hook enforces R9: no 'elsewhere' rows without a parent place. PlacePicker trusts it. */
   section: 'saved' | 'inside' | 'elsewhere';
 }
 
