@@ -1,7 +1,9 @@
 import type { Doc, NodeId, Place } from '../../model/types';
 import { subtree } from '../../model/tree';
 import type { ISODate, NodeContext } from '../../context/resolve';
-import { displayText, tokenize } from '../../syntax/tokenize';
+
+/** Lives in syntax/ so the library can use it too; re-exported for the views. */
+export { plainText } from '../../syntax/plain';
 
 export interface MapStop {
   nodeId: NodeId;
@@ -33,21 +35,6 @@ export function collectDates(doc: Doc, contexts: Map<NodeId, NodeContext>, id: N
     }
   }
   return new Map([...byDate].sort(([a], [b]) => a.localeCompare(b)));
-}
-
-/** Readable text for compact places like calendar cells; a calendar already shows the date. */
-export function plainText(text: string, { dates = true } = {}): string {
-  return tokenize(text)
-    .map((s) => {
-      if (s.kind === 'text') return displayText(s.text);
-      if (s.kind === 'place') return s.name;
-      if (s.kind === 'date') return dates ? s.raw : '';
-      return '';
-    })
-    .join('')
-    .replace(/\s+/g, ' ')
-    .replace(/^[\s—–\-:,·]+/, '')
-    .trim();
 }
 
 /** Mention keys under the view that have no coordinates yet (pending or not found). */

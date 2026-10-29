@@ -20,6 +20,8 @@ export interface Place {
 
 export interface Doc {
   version: 1;
+  /** Optional note title; when absent the first top-level bullet stands in. */
+  title?: string;
   /** Invisible root; its children are the top-level bullets. */
   rootId: NodeId;
   nodes: Record<NodeId, OutlineNode>;
