@@ -6,12 +6,13 @@
 .route-sketch__line {
   stroke: var(--accent);
   stroke-width: 2;
+  vector-effect: non-scaling-stroke; /* the sketch shrinks on phones; the line shouldn't thin out */
   stroke-dasharray: 4 4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .route-sketch__start { fill: var(--accent); }
-.route-sketch__end { fill: var(--paper); stroke: var(--accent); stroke-width: 2; }
+.route-sketch__end { fill: var(--paper); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .route-sketch__halo { fill: var(--accent); opacity: 0.18; }
 
 /* ---------- note card ---------- */
@@ -31,7 +32,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 .note-card:hover { border-color: var(--accent); }
 .note-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -43,6 +44,10 @@
   font-weight: 650;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .note-card__meta,
 .note-card__places,
@@ -66,8 +71,11 @@
 
 .note-card__menu { position: absolute; top: 6px; right: 6px; }
 
+/* Phones are 360-412 px wide: shrink the sketch (the viewBox scales it) instead of dropping it.
+   At 360 px the card is ~328 px, so the body keeps ~170 px beside a 72 px sketch. */
 @media (max-width: 400px) {
-  .note-card__sketch { display: none; }
+  .note-card { gap: 10px; padding-left: 14px; }
+  .note-card__sketch .route-sketch { width: 72px; height: 48px; }
 }
 
 /* ---------- card menu ---------- */
@@ -106,6 +114,7 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
+.card-menu__list--up { top: auto; bottom: 100%; }
 .card-menu__item {
   min-height: 44px;
   padding: 0 14px;
@@ -131,19 +140,25 @@
   color: var(--ink-soft);
 }
 .pinned-row__list {
-  display: flex;
-  flex-wrap: wrap;
+  /* Two rows of chips, then the row scrolls sideways. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  grid-template-rows: repeat(2, auto);
   gap: 8px;
-  max-height: 104px; /* two lines of chips, then scroll */
   margin: 0;
-  padding: 0;
-  overflow-y: auto;
+  padding: 4px; /* room for the focus rings, which overflow-hidden would clip */
+  overflow-x: auto;
+  overflow-y: hidden;
   list-style: none;
 }
+.pinned-row__list li { display: flex; min-width: 0; }
 .pinned-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: min(240px, 80vw);
   min-height: 44px;
   padding: 0 14px;
   color: inherit;
@@ -154,8 +169,14 @@
 }
 .pinned-chip:hover { border-color: var(--accent); }
 .pinned-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pinned-chip__title { font-weight: 600; }
-.pinned-chip__date { font-size: 13px; color: var(--ink-soft); }
+.pinned-chip__title {
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pinned-chip__date { flex: none; font-size: 13px; color: var(--ink-soft); }
 
 /* ---------- undo bar ---------- */
 
@@ -181,14 +202,17 @@
   min-height: 44px;
   padding: 0 16px;
   font-weight: 650;
-  color: var(--accent);
+  /* --bg on --ink is 14.8:1 light and 14.9:1 dark; --accent on --ink is only 3.1:1 and 1.8:1. */
+  color: var(--bg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
   background: transparent;
   border: 0;
   border-radius: 999px;
   cursor: pointer;
 }
 .undo-bar__undo:hover { background: color-mix(in srgb, var(--bg) 12%, transparent); }
-.undo-bar__undo:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.undo-bar__undo:focus-visible { outline: 2px solid var(--bg); outline-offset: -4px; }
 
 @keyframes undo-bar-in {
   from { opacity: 0; transform: translate(-50%, 8px); }

@@ -17,6 +17,7 @@ const swallow = (e: MouseEvent) => {
 
 export function CardMenu({ meta, onPin, onArchive, onDelete }: Props) {
   const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menuId = useId();
@@ -61,7 +62,18 @@ export function CardMenu({ meta, onPin, onArchive, onDelete }: Props) {
   const archived = !!meta.archived;
 
   return (
-    <div className="card-menu" ref={root} onKeyDown={onKeyDown} onClick={(e) => e.stopPropagation()}>
+    <div
+      className="card-menu"
+      ref={root}
+      onKeyDown={onKeyDown}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => {
+        // A null relatedTarget (Safari doesn't focus buttons on click) is left to the pointerdown handler,
+        // otherwise the list would close before the click on an item lands.
+        const next = e.relatedTarget as Node | null;
+        if (next && !root.current?.contains(next)) setOpen(false);
+      }}
+    >
       <button
         ref={trigger}
         type="button"
@@ -72,13 +84,18 @@ export function CardMenu({ meta, onPin, onArchive, onDelete }: Props) {
         aria-controls={open ? menuId : undefined}
         onClick={(e) => {
           swallow(e);
+          if (!open) {
+            // Near the bottom of the screen the list would run off it, so open it upward.
+            const r = e.currentTarget.getBoundingClientRect();
+            setUp(r.top > window.innerHeight * 0.6);
+          }
           setOpen((o) => !o);
         }}
       >
         ⋯
       </button>
       {open && (
-        <div className="card-menu__list" role="menu" id={menuId} aria-label="Note actions">
+        <div className={`card-menu__list${up ? ' card-menu__list--up' : ''}`} role="menu" id={menuId} aria-label="Note actions">
           <button type="button" role="menuitem" className="card-menu__item" onClick={(e) => choose(e, () => onPin(!pinned))}>
             {pinned ? 'Unpin' : 'Pin'}
           </button>

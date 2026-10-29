@@ -18,7 +18,8 @@ interface Props {
 export function NoteCard({ meta, variant, today, now = Date.now(), menu }: Props) {
   const s = meta.summary;
   const range = formatRange(s.from, s.to, today);
-  const relative = s.from && s.to ? relativeDays(s.from, s.to, today) : '';
+  // A start with no end is a single day.
+  const relative = s.from ? relativeDays(s.from, s.to ?? s.from, today) : '';
 
   return (
     <div className={`note-card-wrap note-card-wrap--${variant}`}>

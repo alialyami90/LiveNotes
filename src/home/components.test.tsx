@@ -126,6 +126,10 @@ describe('NoteCard', () => {
     expect(link).not.toHaveTextContent('Évora'); // only three place names
     expect(screen.getByRole('img', { name: 'Route: Lisbon → Porto' })).toBeInTheDocument();
   });
+  it('badges a note with a start date and no end as a single day', () => {
+    render(<NoteCard meta={meta({}, { to: undefined })} variant="timeline" today={TODAY} />);
+    expect(screen.getByText('in 6 days')).toBeInTheDocument();
+  });
   it('shows Untitled for an empty title', () => {
     render(<NoteCard meta={meta({}, { title: '' })} variant="recent" today={TODAY} now={1000} />);
     expect(screen.getByText('Untitled')).toBeInTheDocument();
@@ -217,6 +221,41 @@ describe('CardMenu', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
     expect(trigger).toHaveFocus();
+  });
+
+  it('closes when focus moves outside the menu', async () => {
+    render(
+      <>
+        <CardMenu meta={meta()} onPin={vi.fn()} onArchive={vi.fn()} onDelete={vi.fn()} />
+        <button>Elsewhere</button>
+      </>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Note actions' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    // Keyboard focus, so no pointerdown is involved: only the focusout path can close it.
+    act(() => screen.getByRole('button', { name: 'Elsewhere' }).focus());
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('stays open while focus moves between its own items', async () => {
+    setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Note actions' }));
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: 'Archive' })).toHaveFocus();
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('opens upward when the trigger is low on the screen', async () => {
+    const { trigger } = setup();
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ top: window.innerHeight - 60 } as DOMRect);
+    await userEvent.click(trigger);
+    expect(screen.getByRole('menu')).toHaveClass('card-menu__list--up');
+  });
+
+  it('opens downward when the trigger is high on the screen', async () => {
+    const { trigger } = setup();
+    await userEvent.click(trigger);
+    expect(screen.getByRole('menu')).not.toHaveClass('card-menu__list--up');
   });
 
   it('closes on an outside pointerdown', async () => {
