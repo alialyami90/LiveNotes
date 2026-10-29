@@ -40,6 +40,7 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
   useDiscardOnLeave(route, lastDocs.current);
   useExpireUndoOnOpen(route);
   useAlertUnsavedOnLeave(route);
+  useFocusCardOnReturn(route);
   if (route.name === 'note') {
     return <NoteRoute key={route.id} id={route.id} storage={storage} services={services} onDoc={onDoc} />;
   }
@@ -49,6 +50,25 @@ function Screens({ storage, services }: { storage: Storage; services: Services }
       <PendingUndo />
     </>
   );
+}
+
+/**
+ * Back from a note would leave focus on <body> (the Back button went with the screen), so a
+ * keyboard or screen-reader user lands on the card they opened. Anything that already took
+ * focus (the Undo bar after a delete) keeps it.
+ */
+function useFocusCardOnReturn(route: Route) {
+  const openId = route.name === 'note' ? route.id : null;
+  const prev = useRef<string | null>(null);
+  useEffect(() => {
+    const left = prev.current;
+    prev.current = openId;
+    if (!left || openId !== null) return;
+    const at = document.activeElement;
+    if (at && at !== document.body) return;
+    const href = `#/note/${left}`.replace(/["\\]/g, '\\$&');
+    document.querySelector<HTMLElement>(`main[data-screen] a[href="${href}"]`)?.focus();
+  }, [openId]);
 }
 
 /**

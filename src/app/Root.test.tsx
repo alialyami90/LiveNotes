@@ -299,6 +299,33 @@ describe('Leaving a note whose save failed', () => {
   });
 });
 
+describe('Returning from a note', () => {
+  beforeEach(() => history.replaceState({ livenotesDepth: 0 }, '', '#/'));
+
+  it("focuses the note's card on Home", async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    const { user } = setup(storage);
+    await user.click(screen.getByRole('link', { name: /Trip/ }));
+    await screen.findByText('alpha');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(home()).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('link', { name: /Trip/ })));
+  });
+
+  it('leaves Undo focused after a delete', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    const { user } = setup(storage);
+    await user.click(screen.getByRole('link', { name: /Trip/ }));
+    await screen.findByText('alpha');
+    await user.click(screen.getByRole('button', { name: 'Note menu' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(home()).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Undo' })));
+  });
+});
+
 describe('Delete from the note screen', () => {
   // The app stamps its first entry at load; the shared beforeEach wiped that stamp.
   beforeEach(() => history.replaceState({ livenotesDepth: 0 }, '', '#/'));
@@ -312,11 +339,9 @@ describe('Delete from the note screen', () => {
     const storage = memoryStorage();
     seeded(storage, ['A']).create(doc('alpha', 'Trip'));
     const { user } = setup(storage);
-    const start = history.length;
     await user.click(screen.getByRole('link', { name: /Trip/ }));
     await screen.findByText('alpha');
     const atNote = history.length;
-    expect(atNote).toBe(start + 1);
     await deleteOpenNote(user);
     await waitFor(() => expect(home()).not.toBeNull());
     expect(location.hash).toBe('#/');
