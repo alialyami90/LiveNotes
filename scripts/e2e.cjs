@@ -1,11 +1,12 @@
 // Whole-app browser check (Playwright). Data APIs are stubbed, so it runs offline.
 // Usage: npm run build && npx vite preview --port 4176 --strictPort &  then  node scripts/e2e.cjs <out-dir>
+// Another port: start the preview on it and set E2E_PORT, e.g. E2E_PORT=4191 node scripts/e2e.cjs <out-dir>.
 // Writes screenshots and results to <out-dir>; exits non-zero if any check fails.
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const APP = 'http://localhost:4176/';
+const APP = `http://localhost:${process.env.E2E_PORT || 4176}/`;
 const OUT = process.argv[2];
 const results = [];
 const check = async (name, fn) => {
@@ -20,14 +21,34 @@ const assert = (cond, msg) => {
   if (!cond) throw new Error(msg);
 };
 
+// [lat, lon, admin1, country, population, GeoNames feature code]
 const TOWNS = {
-  lisbon: [38.7167, -9.1333, 'Lisbon District', 'Portugal'],
-  porto: [41.1496, -8.611, 'Porto District', 'Portugal'],
-  dammam: [26.4344, 50.1033, 'Eastern Province', 'Saudi Arabia'],
-  khobar: [26.2794, 50.2083, 'Eastern Province', 'Saudi Arabia'],
+  lisbon: [38.7167, -9.1333, 'Lisbon District', 'Portugal', 517802, 'PPLC'],
+  porto: [41.1496, -8.611, 'Porto District', 'Portugal', 249633, 'PPLA'],
+  dammam: [26.4344, 50.1033, 'Eastern Province', 'Saudi Arabia', 768602, 'PPLA'],
+  khobar: [26.2794, 50.2083, 'Eastern Province', 'Saudi Arabia', 165799, 'PPL'],
+  sintra: [38.8029, -9.3817, 'Lisbon District', 'Portugal', 25000, 'PPL'],
+  barcelona: [41.3888, 2.159, 'Catalonia', 'Spain', 1620343, 'PPLA'],
+  madrid: [40.4165, -3.7026, 'Madrid', 'Spain', 3255944, 'PPLC'],
+  // A far namesake: "@airport" under Barcelona must not become this town.
+  airport: [37.6305, -120.9758, 'California', 'United States', 1300, 'PPL'],
 };
-const POIS = { 'corniche': [26.30, 50.22, 'Khobar', 'Saudi Arabia'] };
+// Photon features. `extent` is in Photon's own order, [west, north, east, south].
+const POIS = [
+  { name: 'Corniche', lat: 26.30, lon: 50.22, city: 'Khobar', country: 'Saudi Arabia' },
+  { name: 'Barcelona–El Prat Josep Tarradellas Airport', lat: 41.2971, lon: 2.0785, city: 'El Prat de Llobregat', country: 'Spain', osm_key: 'aeroway', osm_value: 'aerodrome', extent: [2.0525, 41.3205, 2.1147, 41.2829] },
+  { name: 'Adolfo Suárez Madrid–Barajas Airport', lat: 40.4936, lon: -3.5668, city: 'Madrid', country: 'Spain', osm_key: 'aeroway', osm_value: 'aerodrome', extent: [-3.6127, 40.5363, -3.5263, 40.4517] },
+  // An in-area namesake: "@Madrid" under Barcelona must still be the city.
+  { name: 'Madrid', lat: 41.3915, lon: 2.165, city: 'Barcelona', country: 'Spain', osm_key: 'amenity', osm_value: 'bar' },
+];
 let flaky = true;
+
+const km = (a, b) => {
+  const r = (d) => (d * Math.PI) / 180;
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lon - a.lon) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+};
+const nameMatches = (name, q) => name.toLowerCase().startsWith(q) || name.toLowerCase().split(/[\s–-]+/).some((w) => w.startsWith(q));
 
 async function stub(page) {
   await page.route(/geocoding-api\.open-meteo\.com/, (r) => {
@@ -35,17 +56,29 @@ async function stub(page) {
     if (q === 'flakyville' && flaky) return r.fulfill({ status: 503, body: 'busy' });
     const hits = Object.entries(TOWNS).filter(([k]) => k.startsWith(q) || q === 'flakyville');
     const results = q === 'flakyville' ? [{ name: 'Flakyville', latitude: 10, longitude: 10, admin1: 'X', country: 'Y' }]
-      : hits.map(([k, [lat, lon, a, c]]) => ({ name: k[0].toUpperCase() + k.slice(1), latitude: lat, longitude: lon, admin1: a, country: c }));
+      : hits.map(([k, [lat, lon, a, c, population, code]]) => ({ name: k[0].toUpperCase() + k.slice(1), latitude: lat, longitude: lon, admin1: a, country: c, population, feature_code: code }));
     r.fulfill({ json: results.length ? { results } : {} });
   });
   await page.route(/photon\.komoot\.io/, (r) => {
-    const q = new URL(r.request().url()).searchParams.get('q').toLowerCase();
+    const params = new URL(r.request().url()).searchParams;
+    const q = params.get('q').toLowerCase();
     if (q === 'flakyville' && flaky) return r.fulfill({ status: 503, body: 'busy' });
-    const hits = Object.entries(POIS).filter(([k]) => k.startsWith(q));
-    r.fulfill({ json: { features: hits.map(([k, [lat, lon, city, country]]) => ({ geometry: { coordinates: [lon, lat] }, properties: { name: 'Corniche', city, country } })) } });
+    // bbox is west,south,east,north; like the real server, only what lies inside comes back.
+    const box = params.get('bbox')?.split(',').map(Number);
+    const inBox = (p) => !box || (p.lon >= box[0] && p.lon <= box[2] && p.lat >= box[1] && p.lat <= box[3]);
+    const bias = params.has('lat') ? { lat: Number(params.get('lat')), lon: Number(params.get('lon')) } : null;
+    const hits = POIS.filter((p) => nameMatches(p.name, q) && inBox(p))
+      .sort((a, b) => (bias ? km(a, bias) - km(b, bias) : 0))
+      .slice(0, Number(params.get('limit') || 15));
+    r.fulfill({ json: { features: hits.map(({ lat, lon, ...properties }) => ({ geometry: { coordinates: [lon, lat] }, properties })) } });
   });
   await page.route(/api\.open-meteo\.com\/v1\/forecast/, (r) => r.fulfill({ json: { daily: { weather_code: [1], temperature_2m_max: [22.4], temperature_2m_min: [14.2] } } }));
-  await page.route(/project-osrm/, (r) => r.fulfill({ json: { code: 'Ok', routes: [{ duration: 11760, distance: 289400 }] } }));
+  // Road distance is 1.3 × the great circle at 85 km/h, so a short hop stays walkable.
+  await page.route(/project-osrm/, (r) => {
+    const [a, b] = new URL(r.request().url()).pathname.split('/').pop().split(';').map((c) => c.split(',').map(Number)).map(([lon, lat]) => ({ lat, lon }));
+    const distance = Math.round(km(a, b) * 1300);
+    r.fulfill({ json: { code: 'Ok', routes: [{ duration: Math.round(distance / (85 / 3.6)), distance }] } });
+  });
   await page.route(/tile\.openstreetmap/, (r) => r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
 }
 
@@ -255,6 +288,210 @@ async function libraryFlow(page, tag) {
   });
 }
 
+/** The local date `days` from today, as 2026-11-01 (no year to infer). */
+function isoIn(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const editor = (page) => page.locator('textarea.editor');
+const modePopup = (page) => page.locator('.picker-modes');
+const placeList = (page) => page.locator('.picker[aria-label="Places"]');
+const richRow = (page, re) => page.locator('li[data-node-id] > .row .rich').filter({ hasText: re });
+const typeSlow = (page, s) => page.keyboard.type(s, { delay: 25 });
+const press = async (page, ...keys) => {
+  for (const k of keys) await page.keyboard.press(k);
+};
+const activeTag = (page) => page.evaluate(() => document.activeElement?.tagName);
+/** Each picker row as "icon name", and the divider as "--Elsewhere". */
+const pickerRows = (page) =>
+  placeList(page).locator(':scope > li').evaluateAll((lis) =>
+    lis.map((li) => (li.classList.contains('picker-divider') ? `--${li.textContent}` : `${li.querySelector('.picker-icon').textContent} ${li.querySelector('strong').textContent}`)),
+  );
+
+/** New note → title → Enter: the caret is in the first bullet. */
+async function newNote(page, title) {
+  await page.getByRole('button', { name: 'New note' }).click();
+  await noteScreen(page).waitFor();
+  await page.keyboard.type(title, { delay: 10 });
+  await page.keyboard.press('Enter');
+  await editor(page).waitFor();
+}
+
+/** `@barc` → pick Barcelona, then a child bullet typing `@airport`; waits for every search stage. */
+async function airportUnderBarcelona(page, tap = false) {
+  await typeSlow(page, '@barc');
+  const city = placeList(page).locator('.picker-option', { hasText: 'Barcelona' }).first();
+  await (tap ? city.tap() : city.click());
+  assert((await editor(page).inputValue()).endsWith('@Barcelona '), 'Barcelona not picked');
+  await press(page, 'Enter', 'Tab');
+  await typeSlow(page, '@airport');
+  // The biased Photon stage is queued last; its far airport fills the Elsewhere rows.
+  await placeList(page).locator('.picker-option', { hasText: 'Barajas' }).waitFor({ timeout: 8000 });
+}
+
+/** The travel-mode popup and the area picker, for screenshots in each theme and device. */
+async function phraseShots(page, device, scheme) {
+  await gotoHome(page);
+  await newNote(page, 'Popup shots');
+  await typeSlow(page, '@Lisbon ');
+  await press(page, 'Enter');
+  await typeSlow(page, 'to @Porto ');
+  await modePopup(page).waitFor({ timeout: 3000 });
+  await shot(page, `${device}-popup-${scheme}.png`);
+  await press(page, 'Escape', 'Enter');
+  assert((await modePopup(page).count()) === 0, 'Escape left the popup open');
+  await airportUnderBarcelona(page, device === 'phone');
+  await shot(page, `${device}-picker-${scheme}.png`);
+  const rows = await pickerRows(page);
+  assert(rows[1] === '--Elsewhere', rows.join(' | '));
+  await press(page, 'Escape', 'Escape');
+  await back(page);
+  return rows.join(' | ');
+}
+
+/** Desktop: weather word, the travel-mode popup and its chips, the table's Travel column, area search. */
+async function phraseFlow(page, ctx) {
+  await gotoHome(page);
+  await newNote(page, 'Phrase trip');
+
+  await check('phrases: the weather word is highlighted while typing', async () => {
+    await typeSlow(page, 'Trip /table');
+    await press(page, 'Enter', 'Enter', 'Tab'); // the command adds a table view; then a child bullet
+    await typeSlow(page, `@Lisbon ${isoIn(2)} weather`);
+    const hl = await page.locator('.editor-mirror .hl-weather').allTextContents();
+    assert(hl.join() === 'weather', `highlighted: ${hl}`);
+  });
+  await check('phrases: "to @Porto " opens the travel-mode popup; Enter chooses Drive', async () => {
+    await press(page, 'Enter');
+    await typeSlow(page, 'to @Porto ');
+    await modePopup(page).waitFor({ timeout: 3000 });
+    const rows = (await modePopup(page).locator('.picker-option').allTextContents()).join(' | ');
+    assert(rows === '🚗Drive | 🚶Walk | 🚆Public transport | 🚲Bike | ✈Fly', rows);
+    await shot(page, 'desktop-popup-light.png');
+    await press(page, 'Enter');
+    const v = await editor(page).inputValue();
+    const caret = await editor(page).evaluate((t) => t.selectionStart);
+    assert(v === 'drive to @Porto ' && caret === v.length, `text "${v}", caret ${caret}`);
+    assert((await modePopup(page).count()) === 0, 'popup still open');
+    const hl = await page.locator('.editor-mirror .hl-mode').allTextContents();
+    assert(hl.join() === 'drive', `mode word highlight: ${hl}`);
+    return rows;
+  });
+  await check('phrases: ↓ ↓ Enter chooses Public transport', async () => {
+    await press(page, 'Enter');
+    await typeSlow(page, 'to @Lisbon ');
+    await modePopup(page).waitFor({ timeout: 3000 });
+    await press(page, 'ArrowDown', 'ArrowDown', 'Enter');
+    const v = await editor(page).inputValue();
+    assert(v === 'transit to @Lisbon ', `text "${v}"`);
+  });
+  await check('phrases: clicking Walk writes "walk" and keeps the editor focused', async () => {
+    await press(page, 'Enter');
+    await typeSlow(page, 'to @Sintra ');
+    await modePopup(page).locator('.picker-option', { hasText: 'Walk' }).click();
+    const v = await editor(page).inputValue();
+    assert(v === 'walk to @Sintra ' && (await activeTag(page)) === 'TEXTAREA', `text "${v}", focus ${await activeTag(page)}`);
+  });
+  await check('phrases: after picking in "to @por" the popup opens; clicking elsewhere in the text closes it', async () => {
+    await press(page, 'Enter');
+    await typeSlow(page, 'to @por');
+    await placeList(page).locator('.picker-option', { hasText: 'Porto' }).first().click();
+    assert((await editor(page).inputValue()) === 'to @Porto ', 'pick failed');
+    await modePopup(page).waitFor({ timeout: 2000 });
+    const box = await editor(page).boundingBox();
+    await page.mouse.click(box.x + 2, box.y + box.height / 2);
+    await page.waitForTimeout(150);
+    const caret = await editor(page).evaluate((t) => t.selectionStart);
+    const v = await editor(page).inputValue();
+    assert((await modePopup(page).count()) === 0, 'popup still open after the click');
+    assert(v === 'to @Porto ' && caret === 0, `text "${v}", caret ${caret}`);
+    await press(page, 'Escape');
+  });
+
+  await check('phrases: after blur, weather and travel chips (🚗, 🚆 + Directions, 🚶 ≈); plain "to @Porto" has none', async () => {
+    const chip = (re, kind) => richRow(page, re).locator(`.chip-formula.kind-${kind}`);
+    await chip(/^walk to/, 'travel').waitFor({ timeout: 6000 });
+    const weather = await chip(/^Lisbon/, 'weather').textContent();
+    const drive = await chip(/^drive to/, 'travel').textContent();
+    const transit = await chip(/^transit to/, 'travel').textContent();
+    const walk = await chip(/^walk to/, 'travel').textContent();
+    assert(/^⛅ 22° \/ 14°$/.test(weather), `weather: ${weather}`);
+    assert(/^🚗 \d+h \d\dm · \d+ km$/.test(drive), `drive: ${drive}`);
+    assert(/^🚆 \d+ km · Directions ↗$/.test(transit), `transit: ${transit}`);
+    assert(/^🚶 ≈ \d+h \d\dm · \d+ km$/.test(walk), `walk: ${walk}`);
+    const plain = richRow(page, /^to Porto\s*$/);
+    assert((await plain.count()) === 1 && (await plain.locator('.chip-formula').count()) === 0, 'plain "to @Porto" shows a chip');
+    return [weather, drive, transit, walk].join(' | ');
+  });
+  await check('phrases: the Directions link is Google Maps transit, opens a new tab, not the editor', async () => {
+    const link = richRow(page, /^transit to/).locator('a.chip-link');
+    const href = await link.getAttribute('href');
+    // From the previous stop (Porto) to Lisbon.
+    assert(href === 'https://www.google.com/maps/dir/?api=1&origin=41.1496,-8.611&destination=38.7167,-9.1333&travelmode=transit', href);
+    assert((await link.getAttribute('target')) === '_blank' && (await link.getAttribute('rel')) === 'noopener noreferrer', 'not a new-tab link');
+    const [tab] = await Promise.all([ctx.waitForEvent('page'), link.click()]);
+    await tab.waitForLoadState();
+    const url = tab.url();
+    await tab.close();
+    assert(url.includes('travelmode=transit'), url);
+    assert((await editor(page).count()) === 0, 'the click opened the row editor');
+  });
+  await check('table view: a Travel column holds the route chips; weather stays in Item', async () => {
+    const table = page.locator('[data-view="table"]');
+    const heads = await table.locator('thead th').allTextContents();
+    const col = heads.indexOf('Travel') + 1;
+    assert(col > 0, `headers: ${heads.join(', ')}`);
+    const travel = await table.locator(`tbody td:nth-child(${col}) .kind-travel`).count();
+    const inItem = await table.locator('tbody td:first-child .kind-travel').count();
+    const weather = await table.locator('tbody td:first-child .kind-weather').count();
+    const links = await table.locator(`tbody td:nth-child(${col}) a.chip-link`).count();
+    assert(travel === 3 && inItem === 0 && weather === 1 && links === 1, `travel=${travel} inItem=${inItem} weather=${weather} links=${links}`);
+    return heads.join(', ');
+  });
+
+  await check('area search: under @Barcelona, "@airport" lists the in-area ✈️ first, then Elsewhere', async () => {
+    await richRow(page, /^to Porto\s*$/).click();
+    await press(page, 'End', 'Enter', 'Shift+Tab');
+    await airportUnderBarcelona(page);
+    await shot(page, 'desktop-picker-light.png');
+    const rows = await pickerRows(page);
+    assert(rows[0] === '✈️ Barcelona–El Prat Josep Tarradellas Airport' && rows[1] === '--Elsewhere', rows.join(' | '));
+    assert(rows.includes('🏘️ Airport') && rows.includes('✈️ Adolfo Suárez Madrid–Barajas Airport'), rows.join(' | '));
+    return rows.join(' | ');
+  });
+  await check('area search: the picked airport is stored with its kind and extent ([w, s, e, n])', async () => {
+    await placeList(page).locator('.picker-option').first().click();
+    const v = await editor(page).inputValue();
+    assert(v === '@[Barcelona–El Prat Josep Tarradellas Airport] ', `text "${v}"`);
+    await press(page, 'Enter');
+    await typeSlow(page, '@airport ');
+    await press(page, 'Enter');
+    await typeSlow(page, 'then @Madrid ');
+    await press(page, 'Escape');
+    const id = noteIdFromUrl(page);
+    const key = 'barcelona–el prat josep tarradellas airport';
+    await page.waitForFunction(([k, pk]) => !!JSON.parse(localStorage.getItem(k) || '{"places":{}}').places[pk], [`livenotes:note:${id}`, key], { timeout: 3000 });
+    const stored = await page.evaluate(([k, pk]) => JSON.parse(localStorage.getItem(k)).places[pk], [`livenotes:note:${id}`, key]);
+    assert(stored.kind === 'airport' && JSON.stringify(stored.extent) === '[2.0525,41.2829,2.1147,41.3205]', JSON.stringify(stored));
+    const icon = await page.locator('.chip-place', { hasText: 'Barcelona–El Prat' }).getAttribute('data-icon');
+    assert(icon === '✈️', `chip icon ${icon}`);
+  });
+  await check('area search: typed @airport under Barcelona is El Prat, typed @Madrid is the city', async () => {
+    const airport = page.locator('.chip-place.is-resolved', { hasText: /^airport$/ });
+    const madrid = page.locator('.chip-place.is-resolved', { hasText: /^Madrid$/ });
+    await airport.waitFor({ timeout: 8000 });
+    await madrid.waitFor({ timeout: 8000 });
+    const a = [await airport.getAttribute('title'), await airport.getAttribute('data-icon')];
+    const m = [await madrid.getAttribute('title'), await madrid.getAttribute('data-icon')];
+    assert(a[0].startsWith('Barcelona–El Prat') && a[1] === '✈️', a.join(' '));
+    assert(m[0] === 'Madrid, Spain' && m[1] === '🏙️', m.join(' '));
+    return `${a.join(' ')} | ${m.join(' ')}`;
+  });
+  await back(page);
+}
+
 (async () => {
   const browser = await chromium.launch();
 
@@ -287,6 +524,16 @@ async function libraryFlow(page, tag) {
     assert(t.some((x) => /^\d+ km$/.test(x)), 'no distance');
     assert(!t.some((x) => x.startsWith('⚠')), 'error chip: ' + t.find((x) => x.startsWith('⚠')));
     return t.slice(0, 4).join(' | ');
+  });
+  await check('sample: phrases render ("drive from @Lisbon to @Porto", "Porto weather")', async () => {
+    const drive = await rowText(page, 'drive from').locator('.chip-formula.kind-travel').textContent();
+    assert(/^🚗 \d+h \d\dm · \d+ km$/.test(drive), `drive chip: ${drive}`);
+    // The word itself becomes the chip.
+    const rich = page.locator('li[data-node-id] > .row .rich').filter({ hasText: /^Porto\s/ }).filter({ has: page.locator('.kind-weather') });
+    const w = await rich.locator('.chip-formula.kind-weather').textContent();
+    const words = await rich.textContent();
+    assert(/^⛅ 22° \/ 14°$/.test(w) && !words.includes('weather'), `weather row: ${words}`);
+    return `${drive} | ${w}`;
   });
   await check('map view: 3 numbered markers for explore-Lisbon', async () => {
     await page.locator('[data-view="map"] .map-marker').first().waitFor();
@@ -526,6 +773,24 @@ async function libraryFlow(page, tag) {
     await lctx.close();
   }
 
+  // ---------------- desktop: phrases, travel modes, area search ----------------
+  for (const scheme of ['light', 'dark']) {
+    const fctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: scheme });
+    // The Directions link leaves the app; answer it locally.
+    await fctx.route(/www\.google\.com/, (r) => r.fulfill({ contentType: 'text/html', body: '<title>Directions</title>' }));
+    const fp = await fctx.newPage();
+    fp.setDefaultTimeout(10000);
+    const ferr = watchErrors(fp);
+    await stub(fp);
+    if (scheme === 'light') await phraseFlow(fp, fctx);
+    else await check('desktop dark: travel-mode popup and area picker render', () => phraseShots(fp, 'desktop', 'dark'));
+    await check(`desktop ${scheme}: no JavaScript errors (phrases)`, async () => {
+      const e = ferr();
+      assert(e.length === 0, e.join(' / '));
+    });
+    await fctx.close();
+  }
+
   // ---------------- upgrade migration ----------------
   await check('upgrade: a legacy single doc becomes the first note, unchanged', async () => {
     const legacy = JSON.parse(fs.readFileSync(path.join(OUT, 'export.json'), 'utf8'));
@@ -669,6 +934,27 @@ async function libraryFlow(page, tag) {
         await historyBack(p);
         assert(!p.url().includes('does-not-exist'), `back landed on ${p.url()}`);
       });
+      await check('phone: tapping a travel mode keeps the keyboard (textarea stays focused); 44px targets', async () => {
+        await gotoHome(p);
+        await newNote(p, 'Phone route');
+        await typeSlow(p, '@Lisbon ');
+        await press(p, 'Enter');
+        await typeSlow(p, 'to @Porto ');
+        const transit = modePopup(p).locator('.picker-option', { hasText: 'Public transport' });
+        await transit.waitFor({ timeout: 3000 });
+        const rowH = (await transit.boundingBox()).height;
+        await transit.tap();
+        const v = await p.locator('textarea.editor').inputValue();
+        const focused = await activeTag(p);
+        assert(v === 'transit to @Porto ' && focused === 'TEXTAREA', `text "${v}", focus ${focused}`);
+        await press(p, 'Escape');
+        const link = richRow(p, /^transit to/).locator('a.chip-link');
+        await link.waitFor({ timeout: 6000 });
+        const hit = await link.evaluate((a) => getComputedStyle(a, '::before').height);
+        assert(rowH >= 44 && hit === '44px', `popup row ${rowH}px, link hit area ${hit}`);
+        await back(p);
+        return `row ${Math.round(rowH)}px, link ${hit}`;
+      });
       await libraryFlow(p, 'phone');
       await check('phone: no horizontal page scroll (home)', async () => {
         await gotoHome(p);
@@ -676,6 +962,7 @@ async function libraryFlow(page, tag) {
         await noWiderThanScreen(p);
       });
     }
+    await check(`phone ${scheme}: travel-mode popup and area picker render`, () => phraseShots(p, 'phone', scheme));
     // Last: a fullPage screenshot resets Chromium's touch emulation, so (pointer: coarse) stops matching.
     await openSample(p);
     await p.locator('[data-view="map"] .map-marker').first().waitFor();

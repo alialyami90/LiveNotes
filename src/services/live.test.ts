@@ -1,6 +1,8 @@
 // Diagnostics against the real APIs. Skipped unless LIVE_SERVICES=1 (CI only; the sandbox has no access).
 import { describe, expect, it } from 'vitest';
 import { httpServices } from './http';
+import { areaOf, inArea } from './geo';
+import { kindOfPhoton, photonExtent } from './kinds';
 
 const NAMES = [
   'lisbon', 'praça do comércio', 'time out market', 'belém tower', 'pastéis de belém',
@@ -90,6 +92,37 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices',
     const results = await s.search('khobar');
     console.log('[app] search khobar', results.map((r) => r.label).join(' ; '));
     expect(results.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('area search: "airport" under Barcelona is an aerodrome inside the area, first', async () => {
+    const barcelona = (await s.geocode('barcelona'))!;
+    console.log('[app] barcelona', JSON.stringify(barcelona));
+    const results = await s.search('airport', barcelona);
+    console.log('[app] search airport near barcelona', results.map((r) => `${r.name} (${r.kind}${r.elsewhere ? ', elsewhere' : ''})`).join(' ; '));
+    expect(results[0]?.kind).toBe('airport');
+    expect(results[0]?.elsewhere).toBeUndefined();
+    expect(inArea(results[0], areaOf(barcelona))).toBe(true);
+  }, 60_000);
+
+  it('area search: "cafe" near Lisbon finds a place of kind cafe', async () => {
+    const lisbon = (await s.geocode('lisbon'))!;
+    const results = await s.search('cafe', lisbon);
+    console.log('[app] search cafe near lisbon', results.map((r) => `${r.name} (${r.kind})`).join(' ; '));
+    expect(results.some((r) => r.kind === 'cafe')).toBe(true);
+  }, 60_000);
+
+  it('a Photon city has a valid extent once reordered to [west, south, east, north]', async () => {
+    const res = await fetch('https://photon.komoot.io/api/?q=barcelona&limit=3&lang=en&osm_tag=place:city', { headers: { Referer: 'https://localhost/' } });
+    const data = (await res.json()) as { features: { geometry: { coordinates: [number, number] }; properties: Record<string, unknown> }[] };
+    const city = data.features.find((f) => f.properties.extent);
+    console.log('[photon] barcelona', res.status, JSON.stringify(city?.properties), city?.geometry.coordinates);
+    const extent = photonExtent(city?.properties.extent);
+    expect(extent).toBeDefined();
+    const [west, south, east, north] = extent!;
+    expect(west < east && south < north).toBe(true);
+    const [lon, lat] = city!.geometry.coordinates;
+    expect(inArea({ lat, lon }, extent!)).toBe(true);
+    expect(kindOfPhoton(city!.properties.osm_key as string, city!.properties.osm_value as string)).toBe('city');
   }, 60_000);
 
   it('weather, route and map tiles answer', async () => {
