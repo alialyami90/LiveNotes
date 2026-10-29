@@ -40,7 +40,8 @@
   line-height: 22px;
 }
 .chip-place { background: var(--place-bg); color: var(--place-ink); }
-.chip-place::before { content: '📍'; font-size: 0.8em; margin-right: 3px; }
+/* U+2060 (word joiner): an emoji is a line-break opportunity, so a narrow table cell split the pin from the name. */
+.chip-place::before { content: '📍\2060'; font-size: 0.8em; margin-right: 3px; }
 .chip-place.is-pending { outline: 1px dashed currentColor; outline-offset: -1px; }
 .chip-place.is-error { outline: 1px dashed var(--error-ink); outline-offset: -1px; }
 .chip-place.is-error::after { content: ' ⟳'; font-size: 0.85em; }
