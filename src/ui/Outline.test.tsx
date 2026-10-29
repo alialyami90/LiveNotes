@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode } from '../model/types';
 import type { Services } from '../services/types';
@@ -114,6 +114,50 @@ describe('Outline', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('the error popover is portalled out of a clipping table view and stays placed in the viewport', async () => {
+    const nodes: Record<string, OutlineNode> = {
+      root: { id: 'root', text: '', children: ['t'] },
+      t: { id: 't', text: 'Ideas', children: ['x'], view: 'table' },
+      x: { id: 'x', text: 'row {1 +}', children: [] },
+    };
+    const doc: Doc = { version: 1, rootId: 'root', nodes, places: {} };
+    const { user, container } = setup(doc);
+    const table = container.querySelector<HTMLElement>('[data-view="table"] table')!;
+    const chip = await within(table).findByText(/⚠/);
+    // jsdom has no layout: put the chip left of the viewport and check the clamp.
+    vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 120, left: -50, right: 0, width: 50, height: 20, x: -50, y: 100, toJSON: () => ({}),
+    });
+    await user.click(chip);
+    const pop = screen.getByRole('status');
+    expect(pop.textContent).toMatch(/\S/);
+    expect(container.contains(pop)).toBe(false);
+    expect(pop.parentElement).toBe(document.body);
+    expect(pop.style.left).toBe('8px');
+    expect(pop.style.top).toBe('124px');
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('keys that belong to an IME candidate list do not split, indent or move', async () => {
+    const { user, container } = setup(build([['a', 'first'], ['b', 'second']]));
+    await user.click(screen.getByText('second'));
+    const editor = screen.getByRole('textbox');
+    fireEvent.compositionStart(editor);
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    fireEvent.keyDown(editor, { key: 'Tab' });
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(2);
+    expect(container.querySelector('li[data-node-id="a"] li[data-node-id="b"]')).toBeNull();
+    expect(screen.getByRole('textbox')).toHaveValue('second');
+    // Android reports committed candidates as keyCode 229 without a composition flag.
+    fireEvent.compositionEnd(editor);
+    fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 });
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(2);
+    // Once composition is over, Enter splits again.
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(3);
   });
 
   it('marks the editor as composing between compositionstart and compositionend', async () => {

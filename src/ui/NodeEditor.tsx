@@ -89,6 +89,9 @@ export function NodeEditor({ id, focus }: { id: NodeId; focus: Focus }) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter/Tab/arrows that commit or navigate an IME candidate list belong to the IME
+    // (Android reports keyCode 229 for them); they must not split, indent or move.
+    if (composing || e.nativeEvent.isComposing || e.keyCode === 229) return;
     const el = e.currentTarget;
     const collapsed = el.selectionStart === el.selectionEnd;
     if (showing && mention) {

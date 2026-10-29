@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { NodeId } from '../model/types';
 import { formatValue } from '../formula/format';
 import { useStore } from './store';
@@ -36,19 +37,52 @@ export function DateChip({ raw, iso }: { raw: string; iso?: string }) {
   );
 }
 
+const POPOVER_MARGIN = 8;
+const POPOVER_GAP = 4;
+
 /**
  * The chip truncates long messages, and the hover tooltip doesn't exist on a phone,
- * so a tap opens the full text. The popover is a sibling of the chip (which clips
- * its overflow) and swallows clicks so the row doesn't switch to the editor.
+ * so a tap opens the full text. The popover is portalled to <body> because views clip
+ * their overflow; it is fixed-positioned from the chip's rect. React still bubbles its
+ * events through the portal to the row, so it swallows clicks like the chip does.
  */
 function ErrorChip({ source, message, text }: { source: string; message: string; text: string }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
+  const chip = useRef<HTMLSpanElement>(null);
+  const pop = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    // Below the chip, flipped above when it would run off the bottom, and clamped
+    // sideways into the viewport. Re-run on scroll/resize so it follows the chip.
+    const place = () => {
+      const c = chip.current?.getBoundingClientRect();
+      const el = pop.current;
+      if (!c || !el) return;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const below = c.bottom + POPOVER_GAP;
+      const above = c.top - POPOVER_GAP - h;
+      const flip = below + h + POPOVER_MARGIN > window.innerHeight && above >= POPOVER_MARGIN;
+      const left = Math.max(POPOVER_MARGIN, Math.min(c.left, window.innerWidth - w - POPOVER_MARGIN));
+      el.style.top = `${flip ? above : below}px`;
+      el.style.left = `${left}px`;
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!wrap.current?.contains(t) && !pop.current?.contains(t)) setOpen(false);
     };
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -65,15 +99,17 @@ function ErrorChip({ source, message, text }: { source: string; message: string;
     e.stopPropagation();
     setOpen((o) => !o);
   };
+  // The click handler sits on the wrapper so its ::before can widen the touch target
+  // to 44px on phones without being clipped by the chip's own overflow.
   return (
-    <span className="chip-wrap" ref={wrap}>
+    <span className="chip-wrap" ref={wrap} onClick={toggle}>
       <span
+        ref={chip}
         className="chip chip-formula kind-error is-error"
         role="button"
         tabIndex={0}
         aria-expanded={open}
         title={`{${source}}\n${message}`}
-        onClick={toggle}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -83,11 +119,13 @@ function ErrorChip({ source, message, text }: { source: string; message: string;
       >
         {text}
       </span>
-      {open && (
-        <span className="chip-popover" role="status" onClick={(e) => e.stopPropagation()}>
-          {message}
-        </span>
-      )}
+      {open &&
+        createPortal(
+          <span ref={pop} className="chip-popover" role="status" onClick={(e) => e.stopPropagation()}>
+            {message}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }

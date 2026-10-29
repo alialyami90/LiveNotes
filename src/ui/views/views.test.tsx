@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc, OutlineNode, ViewKind } from '../../model/types';
@@ -45,6 +45,11 @@ describe('collect', () => {
 
   it('unresolvedPlaces lists mention keys in the subtree that have no coordinates yet', () => {
     expect(unresolvedPlaces(doc, ctx, 'trip')).toEqual([{ key: 'atlantis', name: 'Atlantis' }]);
+  });
+
+  it('unresolvedPlaces keeps the first-written spelling when a mention repeats in another case', () => {
+    const d = build([['a', 'Go to @Atlantis', [['b', 'Back to @ATLANTIS and @atlantis']]]]);
+    expect(unresolvedPlaces(d, resolveContexts(d, TODAY), 'a')).toEqual([{ key: 'atlantis', name: 'Atlantis' }]);
   });
 
   it('collectDates groups nodes by their own dates, sorted', () => {
@@ -118,8 +123,38 @@ describe('CalendarView', () => {
     const days = container.querySelectorAll('.agenda li');
     expect(days).toHaveLength(2);
     expect(days[0]).toHaveTextContent('Tue, Nov 3');
+    expect(within(days[0] as HTMLElement).getByRole('button', { name: 'arrive' })).toBeInTheDocument();
     expect(within(container.querySelector<HTMLElement>('.agenda')!).getAllByRole('button')).toHaveLength(3);
     expect(within(days[1] as HTMLElement).getAllByRole('button')).toHaveLength(2);
+  });
+
+  describe('measuring its own width', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const stubObserver = (width: number) => {
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(private cb: (entries: { contentRect: { width: number } }[]) => void) {}
+          observe() {
+            this.cb([{ contentRect: { width } }]);
+          }
+          disconnect() {}
+        },
+      );
+    };
+
+    it('shows the agenda at 400px', () => {
+      stubObserver(400);
+      const { container } = renderCalendar();
+      expect(container.querySelectorAll('.agenda li')).toHaveLength(2);
+      expect(within(container.querySelector<HTMLElement>('.month-grid')!).queryAllByRole('button')).toHaveLength(0);
+    });
+
+    it('shows none at 800px', () => {
+      stubObserver(800);
+      const { container } = renderCalendar();
+      expect(container.querySelector('.agenda')).toBeNull();
+    });
   });
 
   it('when wide (the default), there is no agenda list', () => {

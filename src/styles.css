@@ -251,13 +251,12 @@ li.is-hovered > .row { background: var(--hover); }
 .chip-wrap { position: relative; display: inline; }
 .chip-formula.is-error { cursor: pointer; }
 .chip-popover {
-  position: absolute;
+  position: fixed;
+  top: 0;
   left: 0;
-  top: 100%;
-  z-index: 20;
+  z-index: 1200;
   width: max-content;
   max-width: min(22em, 80vw);
-  margin-top: 4px;
   padding: 6px 10px;
   border-radius: var(--radius);
   border: 1px solid var(--error-ink);
@@ -371,6 +370,7 @@ li.is-hovered > .row { background: var(--hover); }
 .agenda-entries { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .agenda .entry { font-size: 14px; padding: 3px 8px; white-space: normal; }
 
+/* Keep in sync with NARROW_PX in CalendarView.tsx. */
 @container (max-width: 520px) {
   .day { min-height: 34px; }
   .col-place { display: none; }
@@ -508,4 +508,7 @@ body {
 }
 @media (pointer: coarse) {
   .picker-option { padding: 12px 12px; }
+  .agenda .entry { min-height: 44px; display: flex; align-items: center; }
+  /* 44px hit area around the one-line error chip without changing its line box */
+  .chip-wrap::before { content: ''; position: absolute; inset: -11px -4px; }
 }

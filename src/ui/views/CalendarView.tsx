@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { NodeId } from '../../model/types';
 import type { ISODate } from '../../context/resolve';
 import { useStore } from '../store';
@@ -10,6 +10,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_MS = 86400000;
 const MAX_WEEKS = 26;
+// Keep in sync with the `@container (max-width: 520px)` rule in styles.css.
 const NARROW_PX = 520;
 
 const toUTC = (iso: ISODate) => {
@@ -38,9 +39,12 @@ function title(first: ISODate, last: ISODate): string {
 /** True at or below NARROW_PX. Without ResizeObserver (jsdom) it stays wide. */
 function useNarrow(ref: RefObject<HTMLElement | null>, force?: boolean): boolean {
   const [narrow, setNarrow] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el) return;
+    // Measure before first paint so a phone never flashes the wide grid.
+    if (el.clientWidth > 0) setNarrow(el.clientWidth <= NARROW_PX);
+    if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width <= NARROW_PX));
     ro.observe(el);
     return () => ro.disconnect();
