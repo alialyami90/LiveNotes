@@ -11,6 +11,9 @@ fixed schema.
 This file is the design spec and the working agreement for anyone (human or
 Claude) building the app. Keep it current when the design changes.
 
+**Picking up work?** Read `handoff.md` first: current state, next steps, the
+owner's standing rules and the process that keeps quality up.
+
 ---
 
 ## 1. The Embark conceptual model (what we are reproducing)
@@ -456,6 +459,11 @@ npm run build
 
   All three must pass.
 - Network APIs are never hit by `npm test`.
+- **Browser check** (`scripts/e2e.cjs`, Playwright, APIs stubbed): after
+  `npm run build`, serve with `npx vite preview --port 4176 --strictPort` and
+  run `node scripts/e2e.cjs <out-dir>`. It covers the editor, views, library,
+  phone layout and both themes, and exits non-zero on any failure. Add checks
+  for every new user-visible behaviour.
 - `src/services/live.test.ts` runs only with `LIVE_SERVICES=1`, in the
   `live-check.yml` workflow. It calls the real APIs and logs what they return,
   and is the first stop when a data feature misbehaves on a device.
@@ -482,7 +490,11 @@ npm run build
 4. **Views:** map, calendar, table, linked hover.
 5. **Library:** many notes, Timeline home, search, pin, archive, delete with
    undo, note titles, visual system (§12, `DESIGN.md`).
-6. *Later:*
+6. **Natural phrases and area search** (designed, not built): "weather" and
+   "drive to @Porto" without brackets, a travel-mode popup, place-kind icons,
+   and searching inside the parent bullet's place. Spec:
+   `docs/superpowers/specs/2026-10-29-natural-phrases-and-area-search-design.md`.
+7. *Later:*
    - Document-level undo.
    - Re-pick a place from candidates.
    - Side-panel (pinned) views.
