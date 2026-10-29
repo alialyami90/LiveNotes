@@ -75,6 +75,29 @@ export function createLegacy(ctx: LegacyContext): Legacy {
     }
   }
 
+  /**
+   * No note is marked, but one may already hold this exact document: the index was rebuilt
+   * (which drops the marker) or a build before the marker migrated it. Marking that note,
+   * rather than adopting a copy, avoids a duplicate. Returns whether it did.
+   */
+  function claimTwin(doc: Doc): boolean {
+    const json = JSON.stringify(doc);
+    const twin = ctx.metas().find((m) => {
+      const stored = parse(ctx.get(noteKey(m.id)));
+      return isDoc(stored) && JSON.stringify(stored) === json;
+    });
+    if (!twin) return false;
+    try {
+      ctx.writeIndex(ctx.metas().map((m) => (m.id === twin.id ? { ...m, legacy: true as const } : m)));
+    } catch (e) {
+      // Unmarked, the key is kept and the next launch tries again; the note is already safe.
+      console.warn('LiveNotes: could not mark the migrated note', e);
+      return true;
+    }
+    removeLegacy();
+    return true;
+  }
+
   return {
     migrate() {
       const legacyDoc = readLegacy();
@@ -87,9 +110,10 @@ export function createLegacy(ctx: LegacyContext): Legacy {
       const doc = readLegacy();
       if (!doc) return;
       const adopted = ctx.metas().find((m) => m.legacy);
-      if (!adopted) return storeAtLaunch(doc, true);
-      // Its note key exists: the note holds the data (perhaps edited since), so the key is stale.
-      if (ctx.get(noteKey(adopted.id)) !== null) return removeLegacy();
+      if (!adopted) return claimTwin(doc) || storeAtLaunch(doc, true);
+      // Its note holds the data (perhaps edited since), so the key is stale. A corrupt note
+      // doesn't count: the legacy key is then the only intact copy, and restores it below.
+      if (isDoc(parse(ctx.get(noteKey(adopted.id))))) return removeLegacy();
       // Listed but never stored (a failed write, then a later index write): restore it in place.
       try {
         ctx.setItem(noteKey(adopted.id), JSON.stringify(doc));

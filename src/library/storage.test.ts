@@ -152,6 +152,28 @@ describe('migration and first launch', () => {
     expect([...store.m.keys()].filter((k) => k.startsWith('livenotes:note:'))).toHaveLength(1);
   });
 
+  it('claims an identical unmarked note (rebuilt index, or a build before the marker) instead of adding a copy', () => {
+    const legacy = doc('Old note');
+    const { lib, store } = setup();
+    const twin = lib.create(legacy);
+    store.m.set(LEGACY_KEY, JSON.stringify(legacy));
+    const next = setup(store).lib;
+    expect(next.list()).toHaveLength(2); // the sample and the twin, no copy
+    expect(next.list().find((m) => m.id === twin.id)?.legacy).toBe(true);
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+  });
+
+  it('restores a marked note whose stored copy is corrupt from the legacy key', () => {
+    const legacy = doc('Old note');
+    const { lib, store } = setup(memStore({ [LEGACY_KEY]: JSON.stringify(legacy) }));
+    const id = lib.list()[0].id;
+    store.m.set(noteKey(id), '{broken');
+    store.m.set(LEGACY_KEY, JSON.stringify(legacy));
+    const next = setup(store).lib;
+    expect(next.read(id)).toEqual(legacy);
+    expect(store.m.has(LEGACY_KEY)).toBe(false);
+  });
+
   it('migrates a legacy doc found beside an existing library as a new note', () => {
     const { lib, store } = setup();
     lib.create(doc('Existing'));
