@@ -123,7 +123,7 @@ Formatting (`formula/format.ts`):
 |---|---|
 | drive | `🚗 3h 05m · 313 km` |
 | walk | `🚶 ≈ 1h 10m · 5.8 km` |
-| bike | `🚲 ≈ 25m · 6.1 km` |
+| bike | `🚲 ≈ 25 min · 6.1 km` |
 | transit | `🚆 313 km · Directions ↗` |
 | fly | `✈ 503 km` |
 
@@ -243,7 +243,7 @@ The parent place is the bullet's inherited place (the existing
 `inheritedPlaceKey`, unchanged).
 
 - If the parent has an `extent`, use it.
-- Otherwise use a box of 30 km around it.
+- Otherwise use a box reaching 30 km from it in each direction.
 - An extent larger than about 400 km across (a country or region) is used as
   is. Photon handles large boxes.
 
@@ -303,7 +303,7 @@ The extra bbox request is one more queued Photon call per picker search. The
 |---|---|
 | "weather" in a bullet with no place, or no date | Error chip "no place here" / "no date here", same as `weather()` today. |
 | A forecast more than about 16 days ahead | "no forecast yet" |
-| A route to the same place as the previous stop | Travel chip with 0 km; drive shows "0m". |
+| A route to the same place as the previous stop | Travel chip with 0 m; drive shows "0 min". |
 | "from @A to @B" where A or B is unresolved | Pending `…`, then the place's own error. |
 | Several route phrases in one bullet | Each gets its own chip after its destination. |
 | "weather" inside `{…}` or written as `\weather` | Not recognised. `\` escapes the word the same way it escapes `@` and `{`. |
