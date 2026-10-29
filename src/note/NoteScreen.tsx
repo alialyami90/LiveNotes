@@ -57,7 +57,7 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
   return (
     <main className="note-screen" data-screen="note">
       <header className="note-bar">
-        <button type="button" className="note-bar-btn" aria-label="Back" onClick={goBack}>
+        <button type="button" className="note-bar-btn" aria-label="Back" onClick={() => goBack()}>
           ←
         </button>
         {archived && <span className="note-pill">Archived</span>}

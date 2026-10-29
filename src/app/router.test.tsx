@@ -63,6 +63,18 @@ describe('useRoute and navigation', () => {
     expect(history.length).toBe(before);
   });
 
+  it('goBack replaces with home when the WebView reports no history, even with depth behind', async () => {
+    render(<Show />);
+    act(() => navigate('#/note/w'));
+    await screen.findByText('note w');
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {});
+    const before = history.length;
+    act(() => goBack({ historyAvailable: false }));
+    expect(back).not.toHaveBeenCalled();
+    await waitFor(() => expect(location.hash).toBe('#/'));
+    expect(history.length).toBe(before);
+  });
+
   it('goBack goes home when the note was opened directly', async () => {
     // A deep link or reload: a fresh module and an entry with no in-app history behind it.
     history.replaceState(null, '', '#/note/z');

@@ -57,9 +57,12 @@ export function navigate(to: string, { replace = false }: { replace?: boolean } 
   stamp(replace ? from : from + 1);
 }
 
-/** Android's back gesture already walks history; the in-app arrow should do the same when it can. */
-export function goBack(): void {
-  if (depth > 0) history.back();
+/**
+ * The in-app arrows and Android's back button both come here. `historyAvailable: false`
+ * is the WebView saying it has nothing to go back to, where history.back() would do nothing.
+ */
+export function goBack({ historyAvailable = true }: { historyAvailable?: boolean } = {}): void {
+  if (depth > 0 && historyAvailable) history.back();
   // Nothing in-app behind us (a deep link): home takes this entry's place, so back from home exits.
   else navigate('#/', { replace: true });
 }
