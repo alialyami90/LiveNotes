@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { goBack, navigate } from '../app/router';
 import { useLibrary } from '../library/LibraryProvider';
+import { isBlankDoc } from '../library/blank';
 import { exportDocument } from '../platform/export';
 import { MobileToolbar } from '../ui/MobileToolbar';
 import { Outline } from '../ui/Outline';
@@ -12,13 +13,13 @@ const FALLBACK_NAME = 'livenotes.json';
 
 /** weekend-trip.json from "Weekend trip!"; letters of any script are kept, so non-Latin titles still name the file. */
 export function exportName(title: string | undefined): string {
-  const slug = (title ?? '')
+  const full = (title ?? '')
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '');
+    .replace(/^-+|-+$/g, '');
+  // By code point: a UTF-16 cut could split a surrogate pair.
+  const slug = Array.from(full).slice(0, 60).join('').replace(/-+$/, '');
   return slug ? `${slug}.json` : FALLBACK_NAME;
 }
 
@@ -59,7 +60,7 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
   };
 
   const onExport = () =>
-    exportDocument(JSON.stringify(doc, null, 2), { name: exportName(doc.title) }).catch((e: unknown) =>
+    exportDocument(JSON.stringify(doc, null, 2), { name: exportName(doc.title?.trim() || meta?.summary.title) }).catch((e: unknown) =>
       alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`),
     );
 
@@ -71,7 +72,8 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
       label: 'Delete',
       danger: true,
       run: () => {
-        deleteWithUndo(id);
+        // Nothing worth undoing: Root's discard-on-leave removes it, and an Undo bar would restore nothing.
+        if (!(isNew && isBlankDoc(doc))) deleteWithUndo(id);
         // Replace, not push: back from home must not land on a note that no longer exists.
         navigate('#/', { replace: true });
       },
@@ -88,6 +90,12 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
         <div
           className="note-menu-wrap"
           ref={wrapRef}
+          onBlur={(e) => {
+            // A null relatedTarget (Safari doesn't focus buttons on click) is left to the pointerdown handler,
+            // otherwise the menu would close before the click on an item lands.
+            const next = e.relatedTarget as Node | null;
+            if (menuOpen && next && !wrapRef.current?.contains(next)) setMenuOpen(false);
+          }}
           onKeyDown={(e) => {
             if (e.key !== 'Escape' || !menuOpen) return;
             e.stopPropagation();

@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Doc } from '../model/types';
 import type { Services } from '../services/types';
 import { memoryStorage } from '../library/memoryStorage';
 import { LibraryProvider, useLibrary } from '../library/LibraryProvider';
 import { NoteRoute } from '../app/NoteRoute';
+import { Root } from '../app/Root';
+import { INDEX_KEY, noteKey } from '../library/storage';
+import { exportName } from './NoteScreen';
 import { navigate, useRoute } from '../app/router';
 import { exportDocument } from '../platform/export';
 
@@ -213,6 +216,22 @@ describe('note menu', () => {
     expect(vi.mocked(exportDocument).mock.calls[0][1]).toEqual({ name: 'livenotes.json' });
   });
 
+  it('names the file after the card title when the note has no title of its own', async () => {
+    const { user, open } = setup();
+    open(doc('Lisbon weekend', undefined));
+    await screen.findByText('Lisbon weekend');
+    await openMenu(user);
+    await user.click(screen.getByRole('menuitem', { name: 'Export' }));
+    expect(vi.mocked(exportDocument).mock.calls[0][1]).toEqual({ name: 'lisbon-weekend.json' });
+  });
+
+  it('never splits a surrogate pair when cutting a long name', () => {
+    // Letters outside the BMP take two UTF-16 units each, so a unit-based cut would land mid-pair.
+    const stem = exportName('𐐀'.repeat(80)).replace(/\.json$/, '');
+    expect(Array.from(stem)).toHaveLength(60);
+    expect(stem).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/);
+  });
+
   it('reports a failed export instead of swallowing it', async () => {
     const { user, open } = setup();
     open(doc('alpha', 'Trip'));
@@ -245,6 +264,18 @@ describe('note menu', () => {
     expect(menuButton()).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('closes when focus moves outside the menu, but not on a null relatedTarget', async () => {
+    const { user, open } = setup();
+    open(doc('alpha', 'Trip'));
+    await screen.findByText('alpha');
+    await openMenu(user);
+    const item = screen.getAllByRole('menuitem')[0];
+    fireEvent.blur(item, { relatedTarget: null });
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    fireEvent.blur(item, { relatedTarget: title() });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
   it('no longer offers Import or Reset to sample', async () => {
     const { user, open } = setup();
     open(doc('alpha', 'Trip'));
@@ -261,5 +292,79 @@ describe('legend', () => {
     open(doc('alpha', 'Trip'));
     await screen.findByText('alpha');
     expect(document.querySelector('main[data-screen="note"] footer.legend')).not.toBeNull();
+  });
+});
+
+describe('deleting', () => {
+  it('a brand-new blank note is not soft-deleted, so no dead Undo appears', async () => {
+    const { user, open, meta, lib } = setup();
+    const id = open();
+    await waitFor(() => expect(title()).toHaveFocus());
+    await openMenu(user);
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(location.hash).toBe('#/'));
+    expect(lib().pendingDelete).toBeNull();
+    expect(meta(id)?.deletedAt).toBeUndefined();
+  });
+
+  it('leaving through Root then discards the blank note entirely', async () => {
+    const user = userEvent.setup();
+    const storage = memoryStorage();
+    render(<Root storage={storage} services={services} today="2026-10-28" />);
+    await user.click(screen.getByRole('button', { name: 'New note' }));
+    await waitFor(() => expect(location.hash).toMatch(/^#\/note\//));
+    const id = decodeURIComponent(location.hash.slice('#/note/'.length));
+    await waitFor(() => expect(title()).toHaveFocus());
+    await openMenu(user);
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(location.hash).toBe('#/'));
+    await waitFor(() => expect(storage.getItem(noteKey(id))).toBeNull());
+    expect(storage.getItem(INDEX_KEY)).not.toContain(id);
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
+  });
+
+  // The editor's debounced save is flushed on unmount; it must not resurrect or un-delete the note.
+  it.each([
+    ['a bullet', () => screen.getByText('alpha'), '{End} typed', 'typed'],
+    ['the title', () => title(), ' more', 'Trip more'],
+  ])('Delete within the save debounce after typing in %s keeps the delete and the text', async (_n, target, keys, expected) => {
+    const { user, storage, open, meta, lib } = setup();
+    const id = open(doc('alpha', 'Trip'));
+    await screen.findByText('alpha');
+    await user.click(target());
+    await user.keyboard(keys);
+    await openMenu(user);
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    await waitFor(() => expect(location.hash).toBe('#/'));
+    expect(meta(id)?.deletedAt).toBeDefined();
+    await act(() => new Promise((r) => setTimeout(r, 600)));
+    expect(meta(id)?.deletedAt).toBeDefined();
+    const saved = meta(id)!.summary;
+    expect(`${saved.title} ${saved.preview}`).toContain(expected);
+    act(() => lib().expireDelete());
+    expect(meta(id)).toBeUndefined();
+    expect(storage.getItem(noteKey(id))).toBeNull();
+  });
+});
+
+describe('phone toolbar', () => {
+  afterEach(() => {
+    // @ts-expect-error jsdom has no matchMedia, so restoring means removing it
+    delete window.matchMedia;
+  });
+
+  it('mounts the editing toolbar when a row is focused on a touch screen', async () => {
+    window.matchMedia = vi.fn().mockImplementation((q: string) => ({
+      matches: q === '(pointer: coarse)',
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    const { user, open } = setup();
+    open(doc('alpha', 'Trip'));
+    await screen.findByText('alpha');
+    expect(screen.queryByRole('toolbar')).toBeNull();
+    await user.click(screen.getByText('alpha'));
+    expect(await screen.findByRole('toolbar', { name: 'Edit bullet' })).toBeInTheDocument();
   });
 });
