@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MODES, insertModeWord, modeOf, routeWithoutMode, type Mode } from './phrases';
 import { displayText, tokenize, type Segment } from './tokenize';
+import { phraseSource } from '../formula/travel';
 
 const raw = (s: Segment) => (s.kind === 'text' ? s.text : s.raw);
 const roundTrip = (t: string) => tokenize(t).map(raw).join('');
@@ -207,3 +208,67 @@ describe('displayText with phrase escapes', () => {
     expect(displayText('mail \\@home \\{x}')).toBe('mail @home {x}');
   });
 });
+
+describe('a formula in the bullet already says it (I1)', () => {
+  const OLD_ROUTE = 'Nov 3 — drive to @Porto {route(@Lisbon, here)}';
+  const OLD_WEATHER = 'Forecast in Porto: {weather()}';
+
+  it(`${JSON.stringify(OLD_ROUTE)} keeps its formula and no route phrase`, () => {
+    const segs = tokenize(OLD_ROUTE);
+    expect(segs.map((s) => s.kind)).toEqual(['date', 'text', 'place', 'text', 'formula']);
+    expect(segs.some((s) => s.kind === 'text' && s.mode)).toBe(false);
+    expect(roundTrip(OLD_ROUTE)).toBe(OLD_ROUTE);
+  });
+
+  it(`${JSON.stringify(OLD_WEATHER)} keeps its formula and no weather word`, () => {
+    expect(tokenize(OLD_WEATHER)).toEqual([
+      { kind: 'text', text: 'Forecast in Porto: ' },
+      { kind: 'formula', source: 'weather()', raw: '{weather()}' },
+    ]);
+  });
+
+  it('matches the call case-insensitively, with spaces before the parenthesis', () => {
+    expect(kinds('weather {WEATHER (@Porto)}')).toEqual(['text', 'formula']);
+    expect(kinds('walk to @Porto {Travel ("walk", prev, here)}')).not.toContain('route');
+    expect(kinds('walk to @Porto {ROUTE(prev, here).duration}')).not.toContain('route');
+  });
+
+  it('only the same kind of call suppresses: a route formula leaves weather, and the reverse', () => {
+    expect(kinds('weather {route(prev, here)}')).toEqual(['weather', 'text', 'formula']);
+    expect(kinds('walk to @Porto {weather()}')).toContain('route');
+    expect(kinds('weather {distance(@A, @B)}')).toContain('weather');
+    expect(kinds('weather {weatherman}')).toContain('weather');
+  });
+});
+
+describe('chained routes in one bullet (I3)', () => {
+  const routes = (t: string) =>
+    tokenize(t).flatMap((s) => (s.kind === 'route' ? [[s.mode, s.fromKey, s.toKey]] : []));
+
+  it('a later "to @X" starts from the previous route\'s destination', () => {
+    expect(routes('drive to @Coimbra then walk to @[Museu Machado]')).toEqual([
+      ['drive', undefined, 'coimbra'],
+      ['walk', 'coimbra', 'museu machado'],
+    ]);
+  });
+
+  it('a from…to route then a to route: the train leg starts from Porto', () => {
+    expect(routes('Car from @Lisbon to @Porto, then train to @Braga')).toEqual([
+      ['drive', 'lisbon', 'porto'],
+      ['transit', 'porto', 'braga'],
+    ]);
+  });
+
+  it('a later from…to route keeps its own start', () => {
+    expect(routes('drive to @A, then walk from @B to @C')).toEqual([
+      ['drive', undefined, 'a'],
+      ['walk', 'b', 'c'],
+    ]);
+  });
+
+  it('phraseSource of the chained route names its start', () => {
+    const seg = tokenize('drive to @Coimbra then walk to @[Museu Machado]').filter((s) => s.kind === 'route')[1];
+    expect(seg.kind === 'route' && phraseSource(seg)).toBe('travel("walk", @[coimbra], @[museu machado])');
+  });
+});
+

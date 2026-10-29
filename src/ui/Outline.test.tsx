@@ -81,9 +81,9 @@ describe('Outline', () => {
   });
 
   it('phrase words become chips; escaped ones and mode words read as written', () => {
-    const { container } = setup(build([['a', 'Forecast in @Lisbon'], ['b', '\\weather and drive to @Porto']]));
+    const { container } = setup(build([['a', 'Nov 3 Forecast in @Lisbon'], ['b', '\\weather and drive to @Porto']]));
     const a = container.querySelector<HTMLElement>('li[data-node-id="a"] .rich')!;
-    // No date here, so the chip may settle as an error; either way it stands where the word was.
+    // The chip may still be pending or settle either way; it stands where the word was.
     expect(a.textContent).not.toMatch(/Forecast/);
     expect(a.querySelector('[title^="{weather()}"]')).toHaveClass('chip-formula');
     const b = container.querySelector<HTMLElement>('li[data-node-id="b"] .rich')!;

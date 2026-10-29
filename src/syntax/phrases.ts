@@ -53,7 +53,16 @@ const TO_ONLY = new RegExp(`^${WS}to${WS}$`, 'iu');
 const TO_END = new RegExp(`${BEFORE}to${WS}$`, 'iu');
 const FROM_END = new RegExp(`${BEFORE}from${WS}$`, 'iu');
 
-function pushText(out: Segment[], text: string): void {
+// I1: a bullet whose formula already makes the call (notes written before phrases
+// existed) keeps the phrase as plain words, so the fact is not shown twice.
+const CALLS_WEATHER = /\bweather\s*\(/i;
+const CALLS_ROUTE = /\b(?:route|travel)\s*\(/i;
+
+function pushText(out: Segment[], text: string, weather: boolean): void {
+  if (!weather) {
+    if (text) out.push({ kind: 'text', text });
+    return;
+  }
   let last = 0;
   for (const m of text.matchAll(WEATHER_RE)) {
     if (m.index > last) out.push({ kind: 'text', text: text.slice(last, m.index) });
@@ -91,37 +100,38 @@ function headBefore(segs: Segment[], i: number, toEnd: RegExp, fromEnd: RegExp):
 /**
  * The tokenizer's post-pass: weather words become segments, and a mode word
  * followed by `to @X` / `from @X to @Y` is marked, with a zero-width `route`
- * segment placed right after the destination.
+ * segment placed right after the destination. A later "to @X" in the same
+ * bullet starts where the route before it ended (I3); only the first uses `prev`.
  */
 export function recognizePhrases(segs: Segment[]): Segment[] {
+  const formulas = segs.flatMap((s) => (s.kind === 'formula' ? [s.source] : []));
+  const weather = !formulas.some((f) => CALLS_WEATHER.test(f));
+  const routing = !formulas.some((f) => CALLS_ROUTE.test(f));
   const modeWords = new Map<number, { start: number; len: number; mode: Mode }>();
   const routes = new Map<number, Segment>();
+  let lastTo: string | undefined;
 
   segs.forEach((dest, i) => {
-    if (dest.kind !== 'place') return;
+    if (!routing || dest.kind !== 'place') return;
     const head = headBefore(segs, i, MODE_TO_END, MODE_FROM_END);
     if (!head) return;
     const mode = modeOf(head.match[1])!;
+    const fromKey = head.fromKey ?? lastTo;
     modeWords.set(head.textIdx, { start: head.match.index, len: head.match[1].length, mode });
-    routes.set(i, {
-      kind: 'route',
-      mode,
-      ...(head.fromKey ? { fromKey: head.fromKey } : {}),
-      toKey: dest.key,
-      raw: '',
-    });
+    routes.set(i, { kind: 'route', mode, ...(fromKey ? { fromKey } : {}), toKey: dest.key, raw: '' });
+    lastTo = dest.key;
   });
 
   const out: Segment[] = [];
   segs.forEach((s, i) => {
     const word = modeWords.get(i);
     if (s.kind !== 'text') out.push(s);
-    else if (!word) pushText(out, s.text);
+    else if (!word) pushText(out, s.text, weather);
     else {
       const end = word.start + word.len;
-      pushText(out, s.text.slice(0, word.start));
+      pushText(out, s.text.slice(0, word.start), weather);
       out.push({ kind: 'text', text: s.text.slice(word.start, end), mode: word.mode });
-      pushText(out, s.text.slice(end));
+      pushText(out, s.text.slice(end), weather);
     }
     const route = routes.get(i);
     if (route) out.push(route);

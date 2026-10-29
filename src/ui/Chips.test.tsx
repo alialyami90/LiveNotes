@@ -97,6 +97,64 @@ describe('phrase chips', () => {
   });
 });
 
+describe('old notes whose formula already says it (I1)', () => {
+  it('"Nov 3 — drive to @Porto {route(@Lisbon, here)}" shows only its route chip', async () => {
+    const { container } = setup(build([['a', 'Nov 3 — drive to @Porto {route(@Lisbon, here)}']], PLACES));
+    const row = rich(container, 'a');
+    const chip = await within(row).findByText('🚗 3h 05m · 313 km');
+    expect(chip).toHaveClass('kind-route');
+    expect(row.querySelectorAll('.chip-formula')).toHaveLength(1);
+    expect(row.querySelector('.kind-travel, .is-error')).toBeNull();
+    expect(row.textContent).toBe('Nov 3 — drive to Porto 🚗 3h 05m · 313 km');
+  });
+
+  it('"Forecast in Porto: {weather()}" shows one weather chip and the word', async () => {
+    const { container } = setup(build([['a', 'Nov 3 @Porto', [['b', 'Forecast in Porto: {weather()}']]]], PLACES));
+    const row = rich(container, 'b');
+    await within(row).findByText('☁️ 18° / 11°');
+    expect(row.querySelectorAll('.chip-formula')).toHaveLength(1);
+    expect(row.textContent).toBe('Forecast in Porto: ☁️ 18° / 11°');
+  });
+});
+
+describe('a weather word with nothing to forecast (I2)', () => {
+  it('"Q4 sales forecast review" reads as plain text, with no chip', () => {
+    const { container } = setup(build([['a', 'Q4 sales forecast review']]));
+    const row = rich(container, 'a');
+    expect(row.textContent).toBe('Q4 sales forecast review');
+    expect(row.querySelector('.chip')).toBeNull();
+    expect(within(row).getByText('forecast')).toHaveAttribute('title', 'No place here for a forecast');
+  });
+
+  it('a bullet with a place but no date shows the plain word with its tooltip', () => {
+    const { container } = setup(build([['a', 'Pack for the weather @Lisbon']], PLACES));
+    const row = rich(container, 'a');
+    expect(row.querySelector('.chip-formula')).toBeNull();
+    expect(within(row).getByText('weather')).toHaveAttribute('title', 'No date here for a forecast');
+    expect(row.textContent).toBe('Pack for the weather Lisbon');
+  });
+
+  it('a dated bullet with a place still shows the chip', async () => {
+    const { container } = setup(build([['a', 'Nov 3 @Lisbon weather']], PLACES));
+    const row = rich(container, 'a');
+    await within(row).findByText('☁️ 18° / 11°');
+    expect(within(row).queryByText('weather')).toBeNull();
+  });
+
+  it('any other failure still shows the error chip ("no forecast yet")', async () => {
+    const { container } = setup(build([['a', 'Dec 30 @Lisbon weather']], PLACES));
+    const row = rich(container, 'a');
+    await waitFor(() => expect(row.querySelector('.chip-formula.is-error')).not.toBeNull());
+    expect(row.querySelector('.chip-formula.is-error')).toHaveTextContent('no forecast yet');
+  });
+
+  it('a written {weather()} formula keeps its error chip', async () => {
+    const { container } = setup(build([['a', 'Plan {weather()}']]));
+    const row = rich(container, 'a');
+    await waitFor(() => expect(row.querySelector('.chip-formula.is-error')).not.toBeNull());
+  });
+});
+
 describe('place-kind icons', () => {
   it('a resolved café shows ☕, a place without a kind shows 📍', () => {
     const { container } = setup(
