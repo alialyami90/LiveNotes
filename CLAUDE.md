@@ -454,7 +454,11 @@ npm run build
    - Side-panel (pinned) views.
    - Date ranges ("Nov 3–5") as calendar spans.
    - Sync via Automerge for true local-first collaboration.
-   - Live transit or walking routes.
+   - **Google Maps provider** (planned; needs a Google Maps Platform key with
+     billing). It would cover Places search and details, Routes API (transit,
+     walking and traffic) and Google map tiles, behind the existing `Services`
+     interface, with the free stack as the keyless fallback. See the "Later
+     phase" in `docs/superpowers/plans/2026-10-29-notes-library.md`.
 
 ---
 
