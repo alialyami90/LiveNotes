@@ -1,4 +1,4 @@
-import { goBack, navigate } from '../app/router';
+import { goBack } from '../app/router';
 import { useLibrary } from '../library/LibraryProvider';
 import { isBlankDoc } from '../library/blank';
 import { exportDocument } from '../platform/export';
@@ -48,8 +48,10 @@ export function NoteScreen({ id, isNew }: { id: string; isNew: boolean }) {
       run: () => {
         // Nothing worth undoing: Root's discard-on-leave removes it, and an Undo bar would restore nothing.
         if (!(isNew && isBlankDoc(doc))) deleteWithUndo(id);
-        // Replace, not push: back from home must not land on a note that no longer exists.
-        navigate('#/', { replace: true });
+        // Back to wherever the note was opened from (Home or Archive), where the Undo bar shows.
+        // Pushing or replacing would stack a second home that Android's back must step through;
+        // the forward entry left behind is harmless, since NoteRoute redirects a deleted id in place.
+        goBack();
       },
     },
   ];

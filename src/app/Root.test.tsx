@@ -236,6 +236,75 @@ describe('Root', () => {
   });
 });
 
+describe('Delete from the note screen', () => {
+  // The app stamps its first entry at load; the shared beforeEach wiped that stamp.
+  beforeEach(() => history.replaceState({ livenotesDepth: 0 }, '', '#/'));
+
+  async function deleteOpenNote(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Note menu' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  }
+
+  it('goes back to Home without growing history, and shows Undo there', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    const { user } = setup(storage);
+    const start = history.length;
+    await user.click(screen.getByRole('link', { name: /Trip/ }));
+    await screen.findByText('alpha');
+    const atNote = history.length;
+    expect(atNote).toBe(start + 1);
+    await deleteOpenNote(user);
+    await waitFor(() => expect(home()).not.toBeNull());
+    expect(location.hash).toBe('#/');
+    expect(history.length).toBe(atNote);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(titles()).not.toContain('Trip');
+    // Back on the first in-app entry, not a second home stacked on it: one more back leaves the app.
+    expect((history.state as { livenotesDepth?: number }).livenotesDepth).toBe(0);
+  });
+
+  it('opened from Archive, lands back on Archive with Undo', async () => {
+    const storage = memoryStorage();
+    const lib = seeded(storage, ['A']);
+    lib.create(doc('alpha', 'Old trip'));
+    lib.setArchived('A', true);
+    const { user } = setup(storage);
+    await user.click(screen.getByRole('link', { name: /Archive/ }));
+    await waitFor(() => expect(document.querySelector('main[data-screen="archive"]')).not.toBeNull());
+    await user.click(screen.getByRole('link', { name: /Old trip/ }));
+    await screen.findByText('alpha');
+    const atNote = history.length;
+    await deleteOpenNote(user);
+    await waitFor(() => expect(document.querySelector('main[data-screen="archive"]')).not.toBeNull());
+    expect(location.hash).toBe('#/archive');
+    expect(history.length).toBe(atNote);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+  });
+
+  it('going Forward onto the deleted note redirects in place', async () => {
+    const storage = memoryStorage();
+    seeded(storage, ['A']).create(doc('alpha', 'Trip'));
+    const { user } = setup(storage);
+    await user.click(screen.getByRole('link', { name: /Trip/ }));
+    await screen.findByText('alpha');
+    const atNote = history.length;
+    await deleteOpenNote(user);
+    await waitFor(() => expect(home()).not.toBeNull());
+    const seen: string[] = [];
+    const record = () => seen.push(location.hash);
+    window.addEventListener('hashchange', record);
+    try {
+      act(() => history.forward());
+      await waitFor(() => expect(seen).toEqual(['#/note/A', '#/']));
+      expect(history.length).toBe(atNote);
+      expect(home()).not.toBeNull();
+    } finally {
+      window.removeEventListener('hashchange', record);
+    }
+  });
+});
+
 describe('Root in StrictMode', () => {
   it('does not discard or lose a new note during the simulated unmount', async () => {
     const { user, container, storage } = setup(memoryStorage(), true);

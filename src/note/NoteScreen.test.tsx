@@ -179,7 +179,7 @@ describe('note menu', () => {
     expect(screen.queryByText('Archived')).toBeNull();
   });
 
-  it('Delete soft-deletes with undo pending and replaces the route with home', async () => {
+  it('Delete soft-deletes with undo pending and goes back home without growing history', async () => {
     const { user, open, meta, lib } = setup();
     const id = open(doc('alpha', 'Trip'));
     await screen.findByText('alpha');
@@ -189,7 +189,7 @@ describe('note menu', () => {
     await waitFor(() => expect(location.hash).toBe('#/'));
     expect(meta(id)?.deletedAt).toBeDefined();
     expect(lib().pendingDelete).toBe(id);
-    // replace, not push: back must not return to the deleted note
+    // back, not push or replace: no second home for Android's back to step through
     expect(history.length).toBe(before);
     expect(document.querySelector('main[data-screen="home"]')).not.toBeNull();
   });
