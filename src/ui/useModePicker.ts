@@ -42,7 +42,9 @@ function signature(text: string, caret: number, at: number): string {
  */
 export function useModePicker(text: string) {
   const [armed, setArmedState] = useState<Armed | null>(null);
-  const [active, setActive] = useState(0);
+  // -1: nothing selected. The popup opens that way so Enter and Tab keep their
+  // editor meaning (split, indent) unless the user has chosen a row (C1).
+  const [active, setActive] = useState(-1);
   const armedRef = useRef<Armed | null>(null);
   const dismissed = useRef(new Set<string>());
 
@@ -69,7 +71,7 @@ export function useModePicker(text: string) {
     const sig = signature(next, caret, found.at);
     if (dismissed.current.has(sig)) return;
     setArmed({ text: next, at: found.at, caret, sig });
-    setActive(0);
+    setActive(-1);
   };
 
   /** Arms after an edit only when the user just typed the end of a mention. */
@@ -96,10 +98,11 @@ export function useModePicker(text: string) {
     const plain = !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey;
     if (plain && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault();
-      setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : MODES.length - 1)) % MODES.length);
+      const down = e.key === 'ArrowDown';
+      setActive((a) => (a < 0 ? (down ? 0 : MODES.length - 1) : (a + (down ? 1 : MODES.length - 1)) % MODES.length));
       return 'handled';
     }
-    if (plain && (e.key === 'Enter' || e.key === 'Tab')) {
+    if (plain && (e.key === 'Enter' || e.key === 'Tab') && active >= 0) {
       e.preventDefault();
       return 'choose';
     }
@@ -108,6 +111,8 @@ export function useModePicker(text: string) {
       dismiss();
       return 'handled';
     }
+    // Anything else, including Enter or Tab with no row selected, dismisses the
+    // phrase and then does its normal editor job.
     dismiss();
     return 'pass';
   };

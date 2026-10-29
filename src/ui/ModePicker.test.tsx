@@ -51,13 +51,16 @@ describe('travel-mode popup', () => {
     const options = screen.getAllByRole('option');
     expect(options[0]).toHaveAccessibleName('Drive');
     expect(options[2]).toHaveAccessibleName('Public transport');
-    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    // C1: nothing is preselected, so Enter or Tab right away does its normal job
+    for (const o of options) expect(o).toHaveAttribute('aria-selected', 'false');
   });
 
   it('ArrowDown then Enter inserts the mode word and keeps the caret after the mention', async () => {
     const { user, container } = setup();
     const editor = await edit(user, container);
     await user.keyboard('{End} to @porto ');
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{ArrowDown}');
     expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{Enter}');
@@ -67,11 +70,28 @@ describe('travel-mode popup', () => {
     expect(container.querySelectorAll('li[data-node-id]')).toHaveLength(1);
   });
 
-  it('Tab chooses the highlighted mode instead of indenting', async () => {
+  it('ArrowUp with nothing selected selects the last row (Fly)', async () => {
+    const { user, container } = setup();
+    const editor = await edit(user, container);
+    await user.keyboard('{End} to @porto {ArrowUp}');
+    expect(screen.getByRole('option', { name: 'Fly' })).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{Enter}');
+    expect(editor).toHaveValue('go fly to @porto ');
+  });
+
+  it('hovering a row selects it', async () => {
+    const { user, container } = setup();
+    await edit(user, container);
+    await user.keyboard('{End} to @porto ');
+    fireEvent.mouseEnter(screen.getByRole('option', { name: 'Bike' }));
+    expect(screen.getByRole('option', { name: 'Bike' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Tab chooses the selected mode instead of indenting', async () => {
     const { user, container } = setup();
     const editor = await edit(user, container);
     await user.keyboard('{End} to @porto ');
-    await user.keyboard('{Tab}');
+    await user.keyboard('{ArrowDown}{Tab}');
     expect(editor).toHaveValue('go drive to @porto ');
     expect(editor).toHaveFocus();
   });
@@ -92,7 +112,7 @@ describe('travel-mode popup', () => {
       expect(editor).toHaveValue('go to @Porto ');
       expect(screen.queryByRole('listbox', { name: 'Places' })).toBeNull();
       expect(popup()).not.toBeNull();
-      await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+      await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{Enter}');
       expect(editor).toHaveValue('go transit to @Porto ');
       expect(both).toBe(false);
     } finally {
@@ -229,7 +249,7 @@ describe('travel-mode popup: fix round 1', () => {
     expect(popup()).toBeNull();
     await user.keyboard(' ');
     expect(popup()).not.toBeNull();
-    await user.keyboard('{ArrowDown}{Enter}');
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
     expect(editor).toHaveValue('go walk to @[Porto] ');
   });
 
@@ -244,6 +264,78 @@ describe('travel-mode popup: fix round 1', () => {
     fireEvent.change(editor, { target: { value: 'go to @porto' } });
     fireEvent.change(editor, { target: { value: 'go to @porto ' } });
     expect(popup()).not.toBeNull();
+  });
+});
+
+function setupTwo() {
+  const user = userEvent.setup();
+  const utils = render(
+    <DocProvider initialDoc={build([['first', 'first'], ['a', 'Back to']])} services={services} storage={null} today="2026-10-28">
+      <Outline />
+    </DocProvider>,
+  );
+  return { user, ...utils };
+}
+
+async function pickPorto(user: ReturnType<typeof userEvent.setup>, container: HTMLElement) {
+  const editor = await edit(user, container);
+  await user.keyboard('{End} @por');
+  const places = await screen.findByRole('listbox', { name: 'Places' });
+  await user.click(places.querySelector('[role="option"]')!);
+  expect(editor).toHaveValue('Back to @Porto ');
+  expect(popup()).not.toBeNull();
+  return editor;
+}
+
+describe('travel-mode popup: no initial selection (C1)', () => {
+  it('Enter right after a pick splits the row normally and records the phrase as dismissed', async () => {
+    const { user, container } = setupTwo();
+    await pickPorto(user, container);
+    await user.keyboard('{Enter}');
+    expect(popup()).toBeNull();
+    const rows = container.querySelectorAll('li[data-node-id]');
+    expect(rows).toHaveLength(3);
+    expect(container.querySelector('li[data-node-id="a"]')?.textContent).not.toContain('drive');
+    expect(screen.getByRole('textbox')).toHaveValue('');
+  });
+
+  it('Tab right after a pick indents and leaves the text alone', async () => {
+    const { user, container } = setupTwo();
+    const editor = await pickPorto(user, container);
+    await user.keyboard('{Tab}');
+    expect(popup()).toBeNull();
+    expect(container.querySelector('li[data-node-id="first"] li[data-node-id="a"]')).not.toBeNull();
+    expect(screen.getByRole('textbox')).toHaveValue('Back to @Porto ');
+    expect(editor.isConnected ? editor : screen.getByRole('textbox')).toHaveFocus();
+  });
+
+  it('Shift+Tab right after a pick outdents', async () => {
+    const user = userEvent.setup();
+    const doc = build([['first', 'first']]);
+    doc.nodes.first.children = ['a'];
+    doc.nodes.a = { id: 'a', text: 'Back to', children: [] };
+    const { container } = render(
+      <DocProvider initialDoc={doc} services={services} storage={null} today="2026-10-28">
+        <Outline />
+      </DocProvider>,
+    );
+    await pickPorto(user, container);
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(popup()).toBeNull();
+    expect(container.querySelector('li[data-node-id="first"] li[data-node-id="a"]')).toBeNull();
+    expect(screen.getByRole('textbox')).toHaveValue('Back to @Porto ');
+  });
+
+  it('Enter, Tab or Shift+Tab with nothing selected records the phrase as dismissed, as Escape does', async () => {
+    const { user, container } = setup();
+    const editor = await edit(user, container);
+    await user.keyboard('{End} to @porto ');
+    // a top-level row cannot outdent, so the editor stays and the dismissal can be observed
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(popup()).toBeNull();
+    expect(editor).toHaveValue('go to @porto ');
+    await user.keyboard('{Backspace} ');
+    expect(popup()).toBeNull();
   });
 });
 

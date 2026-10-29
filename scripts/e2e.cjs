@@ -363,14 +363,16 @@ async function phraseFlow(page, ctx) {
     const hl = await page.locator('.editor-mirror .hl-weather').allTextContents();
     assert(hl.join() === 'weather', `highlighted: ${hl}`);
   });
-  await check('phrases: "to @Porto " opens the travel-mode popup; Enter chooses Drive', async () => {
+  await check('phrases: "to @Porto " opens the travel-mode popup with no row selected; ↓ Enter chooses Drive', async () => {
     await press(page, 'Enter');
     await typeSlow(page, 'to @Porto ');
     await modePopup(page).waitFor({ timeout: 3000 });
     const rows = (await modePopup(page).locator('.picker-option').allTextContents()).join(' | ');
     assert(rows === '🚗Drive | 🚶Walk | 🚆Public transport | 🚲Bike | ✈Fly', rows);
+    const selected = await modePopup(page).locator('[aria-selected="true"], .is-active').count();
+    assert(selected === 0, `${selected} rows selected on open`);
     await shot(page, 'desktop-popup-light.png');
-    await press(page, 'Enter');
+    await press(page, 'ArrowDown', 'Enter');
     const v = await editor(page).inputValue();
     const caret = await editor(page).evaluate((t) => t.selectionStart);
     assert(v === 'drive to @Porto ' && caret === v.length, `text "${v}", caret ${caret}`);
@@ -379,11 +381,11 @@ async function phraseFlow(page, ctx) {
     assert(hl.join() === 'drive', `mode word highlight: ${hl}`);
     return rows;
   });
-  await check('phrases: ↓ ↓ Enter chooses Public transport', async () => {
+  await check('phrases: ↓ ↓ ↓ Enter chooses Public transport', async () => {
     await press(page, 'Enter');
     await typeSlow(page, 'to @Lisbon ');
     await modePopup(page).waitFor({ timeout: 3000 });
-    await press(page, 'ArrowDown', 'ArrowDown', 'Enter');
+    await press(page, 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const v = await editor(page).inputValue();
     assert(v === 'transit to @Lisbon ', `text "${v}"`);
   });
@@ -408,6 +410,19 @@ async function phraseFlow(page, ctx) {
     assert((await modePopup(page).count()) === 0, 'popup still open after the click');
     assert(v === 'to @Porto ' && caret === 0, `text "${v}", caret ${caret}`);
     await press(page, 'Escape');
+  });
+  await check('phrases: Enter right after a pick closes the popup and starts a new bullet', async () => {
+    await richRow(page, /^to Porto\s*$/).click();
+    await press(page, 'End', 'Enter');
+    await typeSlow(page, 'to @lis');
+    await placeList(page).locator('.picker-option', { hasText: 'Lisbon' }).first().click();
+    await modePopup(page).waitFor({ timeout: 2000 });
+    await press(page, 'Enter');
+    const v = await editor(page).inputValue();
+    assert((await modePopup(page).count()) === 0 && v === '', `popup ${await modePopup(page).count()}, new row "${v}"`);
+    await press(page, 'Escape');
+    const prev = richRow(page, /^to Lisbon\s*$/);
+    assert((await prev.count()) === 1 && (await prev.locator('.chip-formula').count()) === 0, 'the picked row gained a mode word');
   });
 
   await check('phrases: after blur, weather and travel chips (🚗, 🚆 + Directions, 🚶 ≈); plain "to @Porto" has none', async () => {
