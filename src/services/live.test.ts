@@ -1,5 +1,5 @@
 // Diagnostics against the real APIs. Skipped unless LIVE_SERVICES=1 (CI only; the sandbox has no access).
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { httpServices } from './http';
 
 const NAMES = [
@@ -59,6 +59,40 @@ describe.skipIf(!process.env.LIVE_SERVICES)('live: open-meteo geocoding and pace
     }
     await show('photon-bias ribeira@porto', `https://photon.komoot.io/api/?q=ribeira&limit=3&lang=en&lat=41.15&lon=-8.61`);
   }, 90_000);
+});
+
+describe.skipIf(!process.env.LIVE_SERVICES)('live: the app\'s own httpServices', () => {
+  const s = httpServices();
+  it('geocode picks the right Lisbon and finds a landmark near it', async () => {
+    const lisbon = await s.geocode('lisbon');
+    console.log('[app] lisbon', JSON.stringify(lisbon));
+    expect(lisbon?.label).toContain('Portugal');
+    const market = await s.geocode('time out market', lisbon!);
+    console.log('[app] time out market near lisbon', JSON.stringify(market));
+    expect(market && Math.abs(market.lat - 38.707) < 0.05).toBe(true);
+    const dammam = await s.geocode('dammam');
+    console.log('[app] dammam', JSON.stringify(dammam));
+    expect(dammam?.label).toContain('Saudi Arabia');
+  }, 60_000);
+
+  it('search returns candidates for the picker', async () => {
+    const results = await s.search('khobar');
+    console.log('[app] search khobar', results.map((r) => r.label).join(' ; '));
+    expect(results.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it('weather, route and map tiles answer', async () => {
+    const lisbon = (await s.geocode('lisbon'))!;
+    const porto = (await s.geocode('porto'))!;
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const w = await s.weather(lisbon, tomorrow);
+    console.log('[app] weather', JSON.stringify(w));
+    const r = await s.route(lisbon, porto);
+    console.log('[app] route', r.seconds, r.meters);
+    expect(r.meters).toBeGreaterThan(250000);
+    const tile = await fetch('https://tile.openstreetmap.org/5/15/12.png', { headers: { Referer: 'https://localhost/' } });
+    console.log('[app] tile', tile.status, tile.headers.get('content-type'));
+  }, 60_000);
 });
 
 describe.skipIf(!process.env.LIVE_SERVICES || !!process.env.SKIP_BURST)('live services', () => {
