@@ -80,6 +80,12 @@ describe('Outline', () => {
     await waitFor(() => expect(chip).toHaveAttribute('title', 'Lisboa'));
   });
 
+  it('phrase words still read in the read view until they get chips', () => {
+    const { container } = setup(build([['a', 'Forecast in @Lisbon'], ['b', '\\weather and drive to @Porto']]));
+    expect(container.querySelector('li[data-node-id="a"] .rich')?.textContent).toMatch(/^Forecast in /);
+    expect(container.querySelector('li[data-node-id="b"] .rich')?.textContent).toMatch(/^weather and drive to /);
+  });
+
   it('an unknown place renders a missing chip', async () => {
     setup(build([['a', 'Visit @Atlantis']]));
     await waitFor(() => expect(screen.getByText('Atlantis')).toHaveClass('is-missing'));

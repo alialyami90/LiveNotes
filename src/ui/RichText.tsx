@@ -28,6 +28,11 @@ export function RichText({ nodeId, text, onActivate, hideFormulas }: Props) {
             return <PlaceChip key={i} placeKey={s.key} name={s.name} />;
           case 'date':
             return <DateChip key={i} raw={s.raw} iso={ownDates[dateIndex++]} />;
+          // Tasks 5 and 6 turn these into chips; until then the word reads as written.
+          case 'weather':
+            return <span key={i}>{displayText(s.raw)}</span>;
+          case 'route':
+            return null;
           case 'formula':
             return hideFormulas ? null : <FormulaChip key={i} nodeId={nodeId} source={s.source} />;
         }

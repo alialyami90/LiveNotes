@@ -53,6 +53,34 @@ describe('weather words', () => {
   });
 });
 
+describe('phrase words glued to URLs, emails and compounds', () => {
+  const PLAIN = [
+    'check weather.com first',
+    'https://weather.com/today',
+    'see https://x.com/weather',
+    'ali@weather.com',
+    'weather-proof jacket',
+    'weather_report',
+    'https://x.com/bus to @Porto',
+    'see x.com/forecast',
+  ];
+  for (const t of PLAIN) {
+    it(`${JSON.stringify(t)} stays plain text`, () => {
+      expect(kinds(t)).not.toContain('weather');
+      expect(kinds(t)).not.toContain('route');
+      expect(tokenize(t).every((s) => s.kind === 'text' || s.kind === 'place')).toBe(true);
+      expect(roundTrip(t)).toBe(t);
+    });
+  }
+  it('sentence punctuation does not block a match', () => {
+    expect(kinds('Nice weather.')).toEqual(['text', 'weather', 'text']);
+    expect(kinds('weather, then lunch')).toEqual(['weather', 'text']);
+    expect(kinds('(weather)')).toEqual(['text', 'weather', 'text']);
+    expect(kinds('Weather: sunny')).toEqual(['weather', 'text']);
+    expect(kinds('drive to @Porto.')).toEqual(['text', 'text', 'place', 'route', 'text']);
+  });
+});
+
 describe('route phrases', () => {
   for (const [word, mode] of WORDS) {
     it(`${word} to @Porto is a ${mode} route`, () => {
@@ -144,6 +172,11 @@ describe('routeWithoutMode', () => {
     expect(routeWithoutMode('to @Porto x', 11)).toBeNull();
     expect(routeWithoutMode('to @Porto', 6)).toBeNull();
     expect(routeWithoutMode('to @[São Be', 11)).toBeNull();
+    expect(routeWithoutMode('to @Por', 5)).toBeNull();
+  });
+  it('is null when the caret is inside a hyphenated name', () => {
+    expect(routeWithoutMode('to @Saint-Malo', 9)).toBeNull();
+    expect(routeWithoutMode('to @Saint-Malo', 14)).toEqual({ at: 0 });
   });
   it('is null without a whole-word "to" on the same line', () => {
     expect(routeWithoutMode('visit @Porto ', 13)).toBeNull();
@@ -169,6 +202,8 @@ describe('displayText with phrase escapes', () => {
   });
   it('keeps other backslashes', () => {
     expect(displayText('\\weathered \\x')).toBe('\\weathered \\x');
+    expect(displayText('C:\\Docs\\train\\x')).toBe('C:\\Docs\\train\\x');
+    expect(displayText('foo\\weather')).toBe('foo\\weather');
     expect(displayText('mail \\@home \\{x}')).toBe('mail @home {x}');
   });
 });

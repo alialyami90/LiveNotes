@@ -1,8 +1,4 @@
-import { tokenize, type Segment } from './tokenize';
-
-// phrases.ts and tokenize.ts import each other. That is safe because every
-// use of the other module's exports happens inside a function body, never
-// while a module is still being evaluated.
+import { placeAt, scan, type Segment } from './scan';
 
 export type Mode = 'drive' | 'walk' | 'transit' | 'bike' | 'fly';
 
@@ -33,14 +29,22 @@ export function modeOf(word: string): Mode | undefined {
 
 const MODE_ALT = [...BY_WORD.keys()].sort((a, b) => b.length - a.length).join('|');
 const WEATHER_ALT = 'weather|forecast';
-// A phrase word is a whole word and not escaped with a backslash.
-const BEFORE = String.raw`(?<![\p{L}\d_\\])`;
-const AFTER = String.raw`(?![\p{L}\d])`;
+// A phrase word is a whole word, not escaped with a backslash, and not glued to
+// its neighbour by a joiner (weather.com, a/weather, me@weather, weather-proof,
+// weather_report). Sentence punctuation like "weather." or "(weather)" still matches.
+const BEFORE = String.raw`(?<![\p{L}\d_\\]|[\p{L}\d][.\/@:-])`;
+const AFTER = String.raw`(?![\p{L}\d_]|[.\/@:-][\p{L}\d])`;
 // R3: whitespace inside a phrase never crosses a line break.
 const WS = String.raw`[^\S\n]+`;
 
-/** A backslash directly before a phrase word; `displayText` hides it like `\@`. */
-export const PHRASE_ESCAPE = new RegExp(String.raw`\\(?=(?:${MODE_ALT}|${WEATHER_ALT})${AFTER})`, 'giu');
+/**
+ * A backslash directly before a phrase word; `displayText` hides it like `\@`.
+ * Only at the start of a word, so `C:\Docs\train` and `foo\weather` keep theirs.
+ */
+export const PHRASE_ESCAPE = new RegExp(
+  String.raw`(?<![\p{L}\d_\\])\\(?=(?:${MODE_ALT}|${WEATHER_ALT})${AFTER})`,
+  'giu',
+);
 
 const WEATHER_RE = new RegExp(`${BEFORE}(?:${WEATHER_ALT})${AFTER}`, 'giu');
 const MODE_TO_END = new RegExp(`${BEFORE}(${MODE_ALT})${WS}to${WS}$`, 'iu');
@@ -59,6 +63,31 @@ function pushText(out: Segment[], text: string): void {
   if (last < text.length) out.push({ kind: 'text', text: text.slice(last) });
 }
 
+interface Head {
+  /** Index of the text segment the pattern matched in. */
+  textIdx: number;
+  match: RegExpExecArray;
+  fromKey?: string;
+}
+
+/**
+ * What stands before the destination place at `i`: `from <place> to ` or `to `.
+ * The from-form is tried first, since its ` to ` also satisfies a plain to-end
+ * pattern. Callers pass the end-of-text patterns, with or without a mode word.
+ */
+function headBefore(segs: Segment[], i: number, toEnd: RegExp, fromEnd: RegExp): Head | null {
+  const prev = segs[i - 1];
+  if (prev?.kind !== 'text') return null;
+  const fromPlace = segs[i - 2];
+  const fromText = segs[i - 3];
+  if (TO_ONLY.test(prev.text) && fromPlace?.kind === 'place' && fromText?.kind === 'text') {
+    const from = fromEnd.exec(fromText.text);
+    if (from) return { textIdx: i - 3, match: from, fromKey: fromPlace.key };
+  }
+  const to = toEnd.exec(prev.text);
+  return to ? { textIdx: i - 1, match: to } : null;
+}
+
 /**
  * The tokenizer's post-pass: weather words become segments, and a mode word
  * followed by `to @X` / `from @X to @Y` is marked, with a zero-width `route`
@@ -69,29 +98,18 @@ export function recognizePhrases(segs: Segment[]): Segment[] {
   const routes = new Map<number, Segment>();
 
   segs.forEach((dest, i) => {
-    const prev = segs[i - 1];
-    if (dest.kind !== 'place' || prev?.kind !== 'text') return;
-    const fromPlace = segs[i - 2];
-    const fromText = segs[i - 3];
-
-    let head: { index: number; len: number; mode: Mode } | undefined;
-    let textIdx = i - 1;
-    let fromKey: string | undefined;
-    const direct = MODE_TO_END.exec(prev.text);
-    if (direct) {
-      head = { index: direct.index, len: direct[1].length, mode: modeOf(direct[1])! };
-    } else if (TO_ONLY.test(prev.text) && fromPlace?.kind === 'place' && fromText?.kind === 'text') {
-      const from = MODE_FROM_END.exec(fromText.text);
-      if (from) {
-        head = { index: from.index, len: from[1].length, mode: modeOf(from[1])! };
-        textIdx = i - 3;
-        fromKey = fromPlace.key;
-      }
-    }
+    if (dest.kind !== 'place') return;
+    const head = headBefore(segs, i, MODE_TO_END, MODE_FROM_END);
     if (!head) return;
-
-    modeWords.set(textIdx, { start: head.index, len: head.len, mode: head.mode });
-    routes.set(i, { kind: 'route', mode: head.mode, ...(fromKey ? { fromKey } : {}), toKey: dest.key, raw: '' });
+    const mode = modeOf(head.match[1])!;
+    modeWords.set(head.textIdx, { start: head.match.index, len: head.match[1].length, mode });
+    routes.set(i, {
+      kind: 'route',
+      mode,
+      ...(head.fromKey ? { fromKey: head.fromKey } : {}),
+      toKey: dest.key,
+      raw: '',
+    });
   });
 
   const out: Segment[] = [];
@@ -112,7 +130,6 @@ export function recognizePhrases(segs: Segment[]): Segment[] {
 }
 
 const TRAILING = /^[\s\p{P}]$/u;
-const WORD_CHAR = /[\p{L}\d]/u;
 const WORD_BEFORE = /([\p{L}\d]+)[^\S\n]+$/u;
 const NOT_A_ROUTE = new Set(['next', 'close', 'near']);
 
@@ -122,7 +139,7 @@ const NOT_A_ROUTE = new Set(['next', 'close', 'near']);
  */
 export function routeWithoutMode(text: string, caret: number): { at: number } | null {
   const head = text.slice(0, caret);
-  const segs = tokenize(head);
+  const segs = scan(head);
   const starts: number[] = [];
   let pos = 0;
   for (const s of segs) {
@@ -133,31 +150,17 @@ export function routeWithoutMode(text: string, caret: number): { at: number } | 
   let pi = segs.length - 1;
   const last = segs[pi];
   if (last?.kind === 'text' && TRAILING.test(last.text)) pi--;
-  else if (last?.kind === 'place' && WORD_CHAR.test(text[caret] ?? '')) return null; // caret is inside the name
-  if (segs[pi]?.kind !== 'place') return null;
+  const dest = segs[pi];
+  if (dest?.kind !== 'place') return null;
+  // The name must be complete in the full text, so a caret inside it ("Saint|-Malo") never counts.
+  if (placeAt(text, starts[pi])?.end !== starts[pi] + dest.raw.length) return null;
 
-  const prev = segs[pi - 1];
-  if (prev?.kind !== 'text') return null;
-
-  let at: number;
-  let fromForm = false;
-  const fromPlace = segs[pi - 2];
-  const fromText = segs[pi - 3];
-  const from =
-    TO_ONLY.test(prev.text) && fromPlace?.kind === 'place' && fromText?.kind === 'text'
-      ? FROM_END.exec(fromText.text)
-      : null;
-  if (from) {
-    at = starts[pi - 3] + from.index;
-    fromForm = true;
-  } else {
-    const to = TO_END.exec(prev.text);
-    if (!to) return null;
-    at = starts[pi - 1] + to.index;
-  }
+  const found = headBefore(segs, pi, TO_END, FROM_END);
+  if (!found) return null;
+  const at = starts[found.textIdx] + found.match.index;
 
   const word = WORD_BEFORE.exec(head.slice(0, at))?.[1].toLowerCase();
-  if (word && (modeOf(word) || (!fromForm && NOT_A_ROUTE.has(word)))) return null;
+  if (word && (modeOf(word) || (!found.fromKey && NOT_A_ROUTE.has(word)))) return null;
   return { at };
 }
 
