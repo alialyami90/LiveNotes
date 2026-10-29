@@ -1,4 +1,5 @@
-import { useEffect, useRef, type SyntheticEvent } from 'react';
+import { Fragment, useEffect, useRef, type SyntheticEvent } from 'react';
+import { placeIcon } from '../services/kinds';
 import type { Suggestion } from './usePlaceSearch';
 
 interface Props {
@@ -28,19 +29,31 @@ export function PlacePicker({ items, active, loading, onPick, onHover }: Props) 
   return (
     <ul ref={ref} className="picker" role="listbox" aria-label="Places">
       {items.map((s, i) => (
-        <li
-          key={`${s.place.lat},${s.place.lon},${i}`}
-          role="option"
-          aria-selected={i === active}
-          className={`picker-option${i === active ? ' is-active' : ''}${s.saved ? ' is-saved' : ''}`}
-          onPointerDown={keepEditorFocus}
-          onMouseDown={keepEditorFocus}
-          onMouseEnter={() => onHover(i)}
-          onClick={() => onPick(s)}
-        >
-          <strong>{s.place.name}</strong>
-          <span>{s.place.label ?? ''}</span>
-        </li>
+        <Fragment key={`${s.place.lat},${s.place.lon},${i}`}>
+          {/* Only between rows: a divider needs something above it (R9). `near` is implied, since without it nothing is elsewhere. */}
+          {s.section === 'elsewhere' && i > 0 && items[i - 1].section !== 'elsewhere' && (
+            <li role="presentation" className="picker-divider">
+              Elsewhere
+            </li>
+          )}
+          <li
+            role="option"
+            aria-selected={i === active}
+            className={`picker-option${i === active ? ' is-active' : ''}${s.saved ? ' is-saved' : ''}`}
+            onPointerDown={keepEditorFocus}
+            onMouseDown={keepEditorFocus}
+            onMouseEnter={() => onHover(i)}
+            onClick={() => onPick(s)}
+          >
+            <span className="picker-icon" aria-hidden="true">
+              {placeIcon(s.place)}
+            </span>
+            <span className="picker-text">
+              <strong>{s.place.name}</strong>
+              <span className="picker-label">{s.place.label ?? ''}</span>
+            </span>
+          </li>
+        </Fragment>
       ))}
     </ul>
   );

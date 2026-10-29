@@ -382,7 +382,7 @@ describe('place picker', () => {
     await user.click(screen.getByText('Visit'));
     await user.keyboard('{End} @lis');
     const options = await screen.findAllByRole('option');
-    expect(options.map((o) => o.textContent)).toEqual(['LisbonLisbon, Portugal', 'LisbonLisbon, Iowa, United States']);
+    expect(options.map((o) => o.textContent)).toEqual(['📍LisbonLisbon, Portugal', '📍LisbonLisbon, Iowa, United States']);
     await user.click(options[0]);
     const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
     expect(editor).toHaveValue('Visit @Lisbon ');
