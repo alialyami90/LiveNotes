@@ -4,10 +4,11 @@ import { sampleDoc } from './sample';
 export const STORAGE_KEY = 'livenotes:doc:v1';
 
 /** Full structural check: a doc that parses but has a broken tree would crash every render. */
-function isDoc(v: unknown): v is Doc {
+export function isDoc(v: unknown): v is Doc {
   if (!v || typeof v !== 'object') return false;
   const d = v as Doc;
   if (d.version !== 1 || typeof d.rootId !== 'string') return false;
+  if (d.title !== undefined && typeof d.title !== 'string') return false;
   if (!d.places || typeof d.places !== 'object' || !d.nodes || typeof d.nodes !== 'object') return false;
   const seen = new Set<string>();
   const walk = (id: string): boolean => {
