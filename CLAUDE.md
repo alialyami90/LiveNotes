@@ -562,8 +562,10 @@ Visual system: `DESIGN.md`.
   tab never overwrites another tab's notes. Home refreshes on `storage`
   events for the index.
 - **Delete is soft first.** `deleteWithUndo` sets `deletedAt` and shows the
-  undo bar ("Note deleted · Undo") for 6 s. Expiry, a second delete, or the
-  app hiding (`pagehide`, or the tab becoming hidden) purges it. Construction
+  undo bar ("Note deleted · Undo") for 6 s on Home and Archive. Expiry, a
+  second delete, opening another note, or the app hiding (`pagehide`, or the
+  tab becoming hidden) purges it. Focus moves to Undo, then back to the
+  restored card, without ever leaving a field the user is typing in. Construction
   also purges anything deleted more than 6 s ago.
 - **Leaving a brand-new empty note discards it.** This applies to notes
   created this session with no title and no text. Blankness is judged on the
@@ -590,6 +592,8 @@ Visual system: `DESIGN.md`.
   header `⋯` menu has Import note and Add sample note.
 - Cards show the route sketch, an inline SVG of the note's places in order
   (no tiles, no network). Each card's `⋯` menu offers Pin, Archive and Delete.
+  Pinned notes show only as compact chips; they are unpinned from the note's
+  own menu. Menus share `ui/useMenu.ts` (outside tap, Escape, arrow keys).
 
 **Note screen** (`note/`):
 - Back, the title field (new notes open with the caret there; Enter moves to
